@@ -9,7 +9,7 @@ Deployment of the Howe Academy app for the Dewalt family (four kids).
   Firebase project + first-boot kid roster.
 - Database: Firebase project `howe-academy-dewalt` (Realtime Database).
 
-Copied from howe-academy @ `9c42217` on 2026-10-01.
+Copied from howe-academy @ `a95a244` on 2026-10-01.
 
 ## Known gap
 
