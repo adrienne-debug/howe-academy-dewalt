@@ -1,2 +1,2 @@
-# Finder/iCloud "name 2.ext" duplicate copies keep appearing in this folder — never ship them
-* 2.*
+# Finder/iCloud "name 2.ext" / "name 3.ext" duplicate copies keep appearing in this folder (the Desktop is iCloud-synced) — never ship them
+* [0-9].*
