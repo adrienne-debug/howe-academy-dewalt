@@ -36,6 +36,6 @@ window.HA_FAMILY = {
     {id:"andrew",   name:"Andrew",   color:"#5b3a8c", badge:"#ede9fe", schoolAge:true,
      notebook:{template:null,    gradeLabel:"2nd"}},   // no 2nd-grade template exists yet
     {id:"caleb",    name:"Caleb",    color:"#c45e1a", badge:"#ffedd5", schoolAge:true,
-     notebook:{template:"first",  gradeLabel:"1st"}}
+     notebook:{template:"caleb",  gradeLabel:"K"}}       // Kindergarten (Adrienne 2026-10-02); his notebook = notebooks.js generateCaleb
   ]
 };
