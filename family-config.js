@@ -35,7 +35,7 @@ window.HA_FAMILY = {
      notebook:{template:"fourth", gradeLabel:"4th"}},
     {id:"andrew",   name:"Andrew",   color:"#5b3a8c", badge:"#ede9fe", schoolAge:true,
      notebook:{template:null,    gradeLabel:"2nd"}},   // no 2nd-grade template exists yet
-    {id:"caleb",    name:"Caleb",    color:"#c45e1a", badge:"#ffedd5", schoolAge:true,
+    {id:"caleb",    name:"Caleb",    emoji:"🚜", color:"#c45e1a", badge:"#ffedd5", schoolAge:true,   // emoji: Adrienne 2026-10-04 (changeable in Settings ▸ Family)
      notebook:{template:"caleb",  gradeLabel:"K"}}       // Kindergarten (Adrienne 2026-10-02); his notebook = notebooks.js generateCaleb
   ]
 };
