@@ -8,7 +8,7 @@ const block=src.slice(a, src.indexOf("\n}\n",b)+3);
 function mk(stored){
   const ls={}; if(stored) ls.ha_laundry_times=JSON.stringify(stored); const writes=[], content={};
   const ctx={console,JSON,Date,Math,parseInt,String,HA_LS:{getItem:k=>ls[k]||null,setItem:(k,v)=>{ ls[k]=v; }},db:{ref:p=>({set:v=>writes.push([p,v])})},
-    momHere:()=>true,kitPinGate:()=>{},mwToast:()=>{},renderMomsPlan:()=>{},document:{getElementById:id=>id==="content"?content:(ctx.inputs&&ctx.inputs[id])||null},inputs:{}};
+    momHere:()=>true,_lbWrite:()=>true,kitPinGate:()=>{},mwToast:()=>{},renderMomsPlan:()=>{},document:{getElementById:id=>id==="content"?content:(ctx.inputs&&ctx.inputs[id])||null},inputs:{}};
   vm.createContext(ctx); vm.runInContext(fn("laundrySince")+"\n"+block,ctx);
   return {run:e=>vm.runInContext(e,ctx),ctx,writes,ls};
 }
@@ -33,7 +33,8 @@ console.log("── times ──");
 console.log("── wiring ──");
 ok("✎ Times button on the Laundry card header, editor right under it", /Laundry<span style="flex:1"><\/span><button onclick="laundryEditToggle\(\)"[^>]*>✎ Times<\/button><\/div>'\+laundryTimesEditorHTML\(\)\+\(typeof momTipLaundryHTML==="function"\?momTipLaundryHTML\(\):""\)/.test(src));
 ok("each load shows when it'll be done", /' since '\+laundrySince\(l\.ts\)\+laundryDoneTxt\(l\)\+'/.test(src));
-ok("Mom's Day reminder covers the washer AND the dryer, at its minutes + the reminder", /if\(!l\|\|\(l\.stage!=="washer"&&l\.stage!=="dryer"\)\) return;/.test(src)&&/if\(mins<\(l\.stage==="dryer"\?laundryT\("dry"\):laundryT\("wash"\)\)\+laundryT\("grace"\)\) return;/.test(src));
-ok("the dryer reminder says fold it, with the right button", /has been in the dryer since '\+laundrySince\(l\.ts\)\+' — time to fold it/.test(src)&&/white-space:nowrap">'\+laundryAdvanceLabel\(l\.stage\)\+'<\/button><\/div>';/.test(src));
+// LAUNDRY_NUDGE (2026-10-15) moved the reminder into laundryNudgeKind / laundryNudgeRowHTML — test_laundry_nudges.js replays it by the minute.
+ok("Mom's Day reminder covers the washer AND the dryer, at its minutes + the reminder", /if\(l\.stage==="washer"\|\|l\.stage==="prewash"\) return mins>=laundryT\("wash"\)\+laundryT\("grace"\)/.test(src)&&/if\(l\.stage==="dryer"\) return mins>=laundryT\("dry"\)\+laundryT\("grace"\)/.test(src));
+ok("the dryer reminder says fold it, with the Folded ✓ button (LAUNDRY_FOLDED merged into LAUNDRY_NUDGE)", /has been in the dryer since '\+since\+' — time to fold it/.test(src)&&/\(x\.kind==="dryer"&&typeof LAUNDRY_FOLDED_BTN!=="undefined"\)\?LAUNDRY_FOLDED_BTN:laundryAdvanceLabel\(l\.stage\)/.test(src));
 ok("listens for settings/laundryTimes", /db\.ref\("settings\/laundryTimes"\)\.on\("value"/.test(src));
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);

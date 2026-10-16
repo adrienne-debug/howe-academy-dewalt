@@ -326,6 +326,8 @@ body.kioskr #kiosk-view .store-card,body.kioskr #kiosk-view .bank-card{margin:0 
 .kk-confirm-no{width:100%;padding:14px;border:2px solid var(--border);border-radius:14px;font-size:16px;font-weight:800;background:#fff;color:var(--muted);cursor:pointer;font-family:'DM Sans',sans-serif}
 /* ── 👨 DAD KIOSK (?kiosk=dad) — his page and nothing else ── */
 body.kioskd #app-header,body.kioskd #nav-tabs,body.kioskd #sched-subtabs,body.kioskd #day-tabs,body.kioskd #kid-filter,body.kioskd #mom-pin-bar,body.kioskd #week-strip,body.kioskd #skylight-panel,body.kioskd #admin-btn,body.kioskd #scroll-top,body.kioskd #hq-back,body.kioskd #md-back,body.kioskd #kiosk-kids,body.kioskd #kiosk-mom{display:none!important}
+/* ── 🧒📚 KC_MASTERY — a kid's study cards inside Kids' Corner: no app menus, only the ← Kids' Corner bar ── */
+body.kc-study #app-header,body.kc-study #nav-tabs,body.kc-study #sched-subtabs,body.kc-study #day-tabs,body.kc-study #kid-filter,body.kc-study #mom-pin-bar,body.kc-study #week-strip,body.kc-study #skylight-panel,body.kc-study #admin-btn,body.kc-study #hq-back,body.kc-study #md-back,body.kc-study #msv-bar{display:none!important}
 /* 🔢 Build fingerprint. pointer-events:none so it can never eat a tap on a wall tablet. */
 #build-fp{display:none;position:fixed;right:6px;bottom:5px;font-size:9px;letter-spacing:.1em;font-family:ui-monospace,Menlo,monospace;color:var(--muted);opacity:.5;z-index:200;pointer-events:none}
 .bfp{font-size:9px;letter-spacing:.1em;font-family:ui-monospace,Menlo,monospace;opacity:.6;margin-left:3px}
@@ -1842,11 +1844,12 @@ function toggleMorningStep(kid,i){
     let _bid=null;
     if(_paid>0){
       if(now){ _bid=bankDirect(kid,_paid,(_st&&_st.emoji?_st.emoji+" ":"")+(_st?_st.label:("Step "+(i+1))),(typeof choreVerifyOn==="function"&&choreVerifyOn(kid))); }
-      else if(cur&&cur.bid){ bankDirectRemove(kid,cur.bid); }
+      else if(cur&&cur.bid){ if(!(typeof cuUnpay==="function"&&cuUnpay(kid,cur.bid,_st?_st.label:("Step "+(i+1))))) bankDirectRemove(kid,cur.bid); }   // ↶ CHOREUNDO: Mom's undo banks the reversal
       else { bankDirect(kid,-_paid,"↩ unchecked: "+(_st?_st.label:("Step "+(i+1)))); }
     }
     slState[sk]={done:now,ts:now?nowTs():"",pts:now?_paid:null,bid:now?(_bid||null):null};
-    rlogAppend(kid,"morning",_st?_st.label:("Step "+(i+1)),now?"on":"off",_paid); }
+    if(now&&typeof _spBy==="function"&&_spBy()) slState[sk].by=_spBy();   // 🔎 SPOTCHECK: Mom's / Dad's tick isn't the kid's own
+    rlogAppend(kid,"morning",_st?_st.label:("Step "+(i+1)),now?"on":"off",_paid,(!now&&typeof _cuMom!=="undefined"&&_cuMom)?{undo:"mom"}:null); }
   // Derive the Morning slot from the steps so every existing consumer (grid, alert, gate) stays correct.
   const allDone=morningComplete(kid,day), _prevSlot=slState[wk+"_"+day+"_"+kid+"_morning"];
   slState[wk+"_"+day+"_"+kid+"_morning"]={done:allDone,ts:allDone?nowTs():""};
@@ -2106,8 +2109,8 @@ function mdKidListsHTML(kid,d){
     steps.forEach(function(st,i){ if(!st) return; const wv=rtWaved(slot,kid,d,i);
       const due=wv||(slot==="morning"?(stepWindowOk(st,d)&&cadDueOn(st.cad||"daily",d)):rtDueOrLate(slot,kid,d,i,st)); if(!due) return;
       const done=(slot==="morning")?mStepDoneOn(kid,d,i):rtDoneOn(slot,kid,d,i);
-      rows+='<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #eef2f0;font-size:12px;font-weight:600;'+(wv?'opacity:.55;':'')+'"><span'+((!wv&&typeof mdKidTick==="function")?' onclick="event.stopPropagation();mdKidTick(\''+slot+'\',\''+kid+'\',\''+d+'\','+i+')" style="cursor:pointer;padding:2px 4px;margin:-2px -4px"':'')+'>'+(done?'✅':wv?'–':'☐')+'</span><span style="flex:1;'+(wv?'text-decoration:line-through':'')+'">'+(st.emoji?st.emoji+' ':'')+esc(st.label)+'</span>'+((st.pts||0)>0&&!wv?'<span style="font-size:10.5px;color:#b45309;font-weight:800">+'+st.pts+' ⭐</span>':'')
-        +(done?'':'<button onclick="event.stopPropagation();rtWave(\''+slot+'\',\''+kid+'\',\''+d+'\','+i+')" style="padding:2px 8px;border-radius:7px;border:1.5px solid '+(wv?'#2B7A78':'#d1d5db')+';background:#fff;color:'+(wv?'#2B7A78':'#6b7280')+';font-size:10.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(wv?'undo':'✕ today')+'</button>')+'</div>'; });
+      rows+='<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #eef2f0;font-size:12px;font-weight:600;'+(wv?'opacity:.55;':'')+'"><span'+((!wv&&typeof mdKidTick==="function")?' onclick="event.stopPropagation();'+(typeof choreFlip==="function"?'choreFlip':'mdKidTick')+'(\''+slot+'\',\''+kid+'\',\''+d+'\','+i+')" style="cursor:pointer;padding:2px 4px;margin:-2px -4px"':'')+'>'+(done?'✅':wv?'–':'☐')+'</span><span style="flex:1;'+(wv?'text-decoration:line-through':'')+'">'+(st.emoji?st.emoji+' ':'')+esc(st.label)+'</span>'+((st.pts||0)>0&&!wv?'<span style="font-size:10.5px;color:#b45309;font-weight:800">+'+st.pts+' ⭐</span>':'')
+        +(done?((typeof choreUndoBtnHTML==="function")?choreUndoBtnHTML(slot,kid,d,i):''):'<button onclick="event.stopPropagation();rtWave(\''+slot+'\',\''+kid+'\',\''+d+'\','+i+')" style="padding:2px 8px;border-radius:7px;border:1.5px solid '+(wv?'#2B7A78':'#d1d5db')+';background:#fff;color:'+(wv?'#2B7A78':'#6b7280')+';font-size:10.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(wv?'undo':'✕ today')+'</button>')+'</div>'; });
     if(rows) h+='<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:6px 0 2px">'+esc(SL_SLBL[slot]||slot)+'</div>'+rows;
   });
   return h+'</div>';
@@ -2265,11 +2268,12 @@ function toggleRtStep(slot,kid,i){
     let _bid=null;
     if(_p>0){
       if(now){ _bid=bankDirect(kid,_p,(_st&&_st.emoji?_st.emoji+" ":"")+(_st?_st.label:("Step "+(i+1))),(typeof choreVerifyOn==="function"&&choreVerifyOn(kid))); }
-      else if(cur&&cur.bid){ bankDirectRemove(kid,cur.bid); }
+      else if(cur&&cur.bid){ if(!(typeof cuUnpay==="function"&&cuUnpay(kid,cur.bid,_st?_st.label:("Step "+(i+1))))) bankDirectRemove(kid,cur.bid); }   // ↶ CHOREUNDO: Mom's undo banks the reversal
       else { bankDirect(kid,-_p,"↩ unchecked: "+(_st?_st.label:("Step "+(i+1)))); }
     }
     slState[sk]={done:now,ts:now?nowTs():"",pts:now?_paid:null,bid:now?(_bid||null):null};
-    rlogAppend(kid,slot,_st?_st.label:("Step "+(i+1)),now?"on":"off",_p);
+    if(now&&typeof _spBy==="function"&&_spBy()) slState[sk].by=_spBy();   // 🔎 SPOTCHECK: Mom's / Dad's tick isn't the kid's own
+    rlogAppend(kid,slot,_st?_st.label:("Step "+(i+1)),now?"on":"off",_p,(!now&&typeof _cuMom!=="undefined"&&_cuMom)?{undo:"mom"}:null);   // ↶ CHOREUNDO: the line says Mom undid it
     try{ if(typeof laundryKidHook==="function") laundryKidHook(kid,_st,sk,now); }catch(e){}   // 🧺 KIDLAUNDRY
   }
   const allDone=rtComplete(slot,kid,day), _prevSlot=slState[wk+"_"+day+"_"+kid+"_"+slot];
@@ -2638,6 +2642,7 @@ function dayRollCheck(){
   const wasOnToday=(day===_dayRollSeen);
   _dayRollSeen=now;
   if(wasOnToday) day=now;
+  try{ if(typeof momBlocksListen==="function") momBlocksListen(); }catch(e){}   // MOMBLOCKS_DAYROLL: Mom's blocks are per day — listen to the new day's path
   if(typeof renderAll==="function") renderAll();
   return true;
 }
@@ -4178,7 +4183,7 @@ function initFb() {
     db.ref("config/helpers").on("value",s=>{ helpersOnValue(s.val()); });
     db.ref("settings/laundryTimes").on("value",s=>{ if(typeof laundryTimesOnValue==="function") laundryTimesOnValue(s.val()); });   // 🧺 LAUNDRYTIMES
     db.ref("settings/laundryBlockMins").on("value",s=>{ if(typeof laundryBlockMinsOnValue==="function") laundryBlockMinsOnValue(s.val()); });   // 🧺 MOMSCHED_LAUNDRY
-    db.ref("momBlocks/"+mwTodayIso()).on("value",s=>{ if(typeof momBlocksOnValue==="function") momBlocksOnValue(s.val()); if(tab==="schedule") renderAll(); });   // 🧺 MOMSCHED_LAUNDRY: everyone's Mom cards lay around her block
+    momBlocksListen();   // 🧺 MOMSCHED_LAUNDRY: everyone's Mom cards lay around her block · MOMBLOCKS_DAYROLL: follows the day (dayRollCheck re-binds it after midnight)
     db.ref("settings/momTips").on("value",s=>{ if(typeof momTipsOnValue==="function") momTipsOnValue(s.val()); });   // 👋 Mom how-to banners she has closed
     db.ref("settings/whatsNewSeen").on("value",s=>{ if(typeof whatsNewOnValue==="function") whatsNewOnValue(s.val()); });   // ✨ the What's new she has read
     db.ref("famProgress").on("value",s=>{ if(typeof famProgOnValue==="function") famProgOnValue(s.val()); });   // 📚 family subjects' shared place-in-book   // 🙋 helper profiles
@@ -4210,6 +4215,7 @@ function initFb() {
     db.ref("config/routineTimes").on("value",s=>{ routineTimes=Object.assign({eveningHour:18}, s.val()||{}); });
     db.ref("routineLog").on("value",s=>{ routineLog=s.val()||{}; });
     db.ref("waved").on("value",s=>{ wavedOnValue(s.val()||{}); if(tab==="moms-plan"||tab==="kids"||tab==="schedule") renderAll(); });   // WAVE
+    db.ref("spotChecks").on("value",s=>{ spotOnValue(s.val()||{}); if(tab==="moms-plan"&&momHere()) renderAll(); });   // 🔎 SPOTCHECK
     db.ref("config/routineRules").on("value",s=>{ routineRules=Object.assign({loseTechEnabled:false,loseTechHour:10}, s.val()||{}); });
     db.ref("config/rewards").on("value",s=>{ rewardCatalog=s.val()||[]; if(typeof renderAll==="function") renderAll(); });
     db.ref("config/storeCfg").on("value",s=>{ storeCfg=Object.assign({threshold:100,open:true,mode:"always",hour:16,closedFor:{}}, s.val()||{}); if(typeof renderAll==="function") renderAll(); });
@@ -4466,6 +4472,7 @@ function showTab(t,keepMsv){
   if(_kioskD()&&t!=="moms-plan") return; // 👨 Dad's link is locked to his page
   if(_kioskK()&&t!=="kids") return;      // 🧒 Kids' Corner link is locked to the Corner
   tab=t;
+  if(typeof kcStudyKid!=="undefined") kcStudyKid=null;   // 🧒📚 KC_MASTERY: a tab tap always lands on the page itself
   mastAddMode=false; mastLogMode=false; mastLogScores={};
   document.querySelectorAll(".nav-tab").forEach(b=>b.classList.toggle("active",(momSchedView&&t==="schedule")?b.dataset.tab==="moms-plan":(b.dataset.tab===t||(t==="supplies"&&b.dataset.tab==="schedule"))));
   if(t!=="schedule"){ schedShowAdmin=false; schedShowHistory=false; schedShowPace=false; schedShowBoard=false; schedShowPeek=false; }
@@ -4547,6 +4554,7 @@ function _renderAllInner(){
   try{ if(momSchedView&&tab==="schedule"&&!momHereReal()){ momDayIn=false; msvExit(); tab="moms-plan"; mpSubView="cal"; document.querySelectorAll(".nav-tab").forEach(b=>b.classList.toggle("active",b.dataset.tab==="moms-plan")); ["sched-subtabs","day-tabs","kid-filter","week-strip","msv-bar"].forEach(id=>{ const e=document.getElementById(id); if(e) e.style.display="none"; }); } }catch(e){}
   const stb=document.getElementById("sitter-tab-btn"); if(stb){ if(SITTER_NAME){stb.textContent=SITTER_NAME;stb.style.display="";} else {stb.style.display="none";} }
   PAGE_KEYS.forEach(k=>{ const b=document.querySelector('.nav-tab[data-tab="'+k+'"]'); if(b) b.style.display=pageOn(k)?"":"none"; });   // 🧩 pages that are off leave the tab bar
+  try{ document.body.classList.toggle("kc-study",typeof kcStudyOn==="function"&&kcStudyOn()); }catch(e){}   // 🧒📚 KC_MASTERY: no app menus over a kid's study
   renderSchedSubtabs(); renderDayTabs(); renderKidFilter(); renderSkylight(); renderWeekStrip(); renderKioskKids(); renderKioskTabs(); renderKioskView(); renderKioskPerson();
   if(tab==="schedule") document.getElementById("day-tabs").style.display=(schedShowHistory||schedShowPace||schedShowAdmin)?"none":"flex";
   const showKidFilter=(tab==="schedule"&&!schedShowAdmin&&!schedShowBoard)||(tab==="history")||(tab==="pace");
@@ -9031,6 +9039,7 @@ function finalizeDone(id, doneTs, score){
     if(score) entry.score=score;
     if(_famPre&&_famPre.label) entry.famLabel=_famPre.label;   // 📚 what the family actually did
     if(_famPre&&_famPre.madeUp) entry.famMadeUp=_famPre.madeUp;   // 📚 FAMMAKEUP: the missed day this check made up
+    try{ const _sb=(typeof _spBy==="function")?_spBy():null; if(_sb) entry.by=_sb; }catch(e){}   // 🔎 SPOTCHECK: Mom's / Dad's check isn't the kid's own
     try{ const _hp=(typeof helperHolds==="function")?helperHolds(t):null; if(_hp) entry.helper=helperName(_hp); else if(typeof dadTapCtx!=="undefined"&&dadTapCtx) entry.helper=dadTapName(); }catch(e){}   // 🙋 "done with Grandma" · 👨 DADFIX: Dad's tap → "done with Dad"
     if(t.lid){ entry.lid=t.lid; entry.pid=t.who+"__"+t.subjectKey; }   // frozen record is lid-resolvable without title parsing
     hist[id]=entry; histState[id]=entry; sv(WK+"_history",hist); if(db) db.ref(WK+"/history/"+id).set(entry);
@@ -9102,6 +9111,7 @@ function finalizeDone(id, doneTs, score){
 // Reflex, notebooks, fixed classes), never a twin or overflow, never a card Mom pushed or
 // dismissed, never past the Settings school end, never over the subject's per-day cap.
 // Targeted per-id writes only, exactly like the check-off heal.
+// MOMPEND (her report 2026-10-15): a card SENT TO MOM to check (claimed) counts as finished here — see _efDone below.
 const EF_DAYS=["monday","tuesday","wednesday","thursday","friday","saturday"];
 function _efDayIdx(d){ return EF_DAYS.indexOf(d); }
 function _efMomFree(kid){
@@ -9113,10 +9123,25 @@ function _efMomFree(kid){
   }catch(e){ return false; }
 }
 function _efIsClose(t){ return !!t&&(t.subjectKey==="closing_nb"||/Closing Notebook/i.test(t.title||"")); }
+// MOMPEND_START — "done or sent to Mom" is the one test for the fill-in (her report 2026-10-15: "Still holding up the
+// schedule when waiting for things to get checked off. It's messing with the algorithm of letting things fill in the
+// blanks. It shouldn't be. It should just go to Mom for her to check, and she can send it back to the kids later or the
+// next day"). The day's end (rtSchoolworkDone), the living-day lay (_mlFinished), the school-end rule and the catch-up
+// list already count a claimed card as finished; this block tested `checked` only, so one card waiting on Mom kept
+// "still has open work today" true and nothing filled the blanks. A claimed card is never pulled or slid either.
+// Mom's ↩ Send back (momReject) takes the claim off and the card is open again, exactly as before.
+function _efDone(id){
+  try{
+    if(typeof checked!=="undefined"&&checked&&checked[id]) return true;
+    if(typeof claimed!=="undefined"&&claimed&&claimed[id]) return true;
+  }catch(e){}
+  return false;
+}
+// MOMPEND_END
 function _efEligible(t,kid){
   if(!t||t.who!==kid) return false;
   if(String(t.id||"").endsWith("_c")||t._eowOverflow) return false;
-  if(typeof checked!=="undefined"&&checked&&checked[t.id]) return false;
+  if(_efDone(t.id)) return false;   // MOMPEND: done or sent to Mom
   if(/lunch/i.test(t.title||"")) return false;
   if(_efIsClose(t)||t.subjectKey==="morning_nb"||/Morning Notebook/i.test(t.title||"")) return false;
   if(typeof subjNoCarry==="function"&&subjNoCarry(t)) return false;
@@ -9144,7 +9169,7 @@ function efPullNext(kid){
     const dayOf=function(t){ try{ return (typeof _mlDayOf==="function")?_mlDayOf(t):t.day; }catch(e){ return t.day; } };
     const mine=tasks.filter(function(t){ return t&&t.who===kid&&dayOf(t)===today&&!String(t.id||"").endsWith("_c")&&!t._eowOverflow&&!/lunch/i.test(t.title||""); });
     if(!mine.length) return null;                                                          // no school today for this kid
-    if(mine.some(function(t){ return !_efIsClose(t)&&!(checked&&checked[t.id]); })) return null;   // still has open work today
+    if(mine.some(function(t){ return !_efIsClose(t)&&!_efDone(t.id); })) return null;   // still has open work today (MOMPEND: a card with Mom is not open)
     const nowMin=(typeof _mlNowMin==="function")?_mlNowMin():(function(){ const d=new Date(); return d.getHours()*60+d.getMinutes(); })();
     const endMin=(typeof _mlDayEndMin==="function")?_mlDayEndMin():toMin("4:15 PM");
     // 🔁 Rules "comes back on its own": when nothing fell off today, behind-work (BEHIND block) returns automatically
@@ -10672,6 +10697,9 @@ document.getElementById("dlg-ok").onclick=()=>{
     obSet(WK+"/claimed/"+id,ts,_cw0,{u:WK+"/checked/"+id});   // 📮 replayed only while the card is still unchecked
     dbg("write claim id="+id);
     closeDlg(); renderAll();
+    // ⏩ MOMPEND (her report 2026-10-15): sending the last open card to Mom finishes the kid's day for the fill-in too — the
+    // same pull a check-off makes (finalizeDone), so work that fell off today comes back now instead of waiting on her check.
+    try{ if(typeof efPullNext==="function"&&effectiveDay(t)===_todayDay) setTimeout(function(){ try{ if(efPullNext(t.who)&&typeof renderAll==="function") renderAll(); }catch(e){} },0); }catch(e){}
     if(typeof gwShowToast==="function") gwShowToast("Sent to Mom to check ✓");
     // 🎉 her rule 2026-09-23: the kid celebrates when the day is done — not later on Mom's phone when she approves
     try{ if(effectiveDay(t)===_todayDay&&rtSchoolworkDone(t.who,_todayDay)) setTimeout(function(){ celebrateDayComplete(t.who,_todayDay); },600); }catch(e){}
@@ -10909,6 +10937,7 @@ function renderDadsDay(el){
     if(_dp.n) h+='<div style="margin:10px 12px 0;background:#fff;border-radius:12px;padding:10px 12px 4px;box-shadow:0 4px 20px rgba(43,122,120,0.13)">'
       +'<div style="font-size:11px;font-weight:800;color:#ea580c;letter-spacing:.04em;margin-bottom:6px">🔴 KITCHEN NOW</div>'+_dp.html+'</div>';
   }catch(e){}
+  try{ h+=laundryBinNowHTML(); }catch(e){}   // 💦 LAUNDRY_NUDGE (hole 9): a load still in the wash-today bin
   try{ h+=helperDadCardHTML(); }catch(e){}   // 🙋 "I'm here — ready to help with school"
   try{ h+=dadSchedHTML(dn); }catch(e){}   // 👨 DADFIX: 🗓 My schedule today
   try{ if(typeof hhCleanOn==="function"&&hhCleanOn(iso)) h+='<div style="margin:10px 12px 0">'+hhCleanPanelHTML("dad",iso,dn)+'</div>'; }catch(e){}   // 🧽 CLEANINGDAY
@@ -13065,25 +13094,29 @@ let laundryTimes={}, laundryEditOpen=false;
 try{ laundryTimes=JSON.parse(HA_LS.getItem('ha_laundry_times')||"{}")||{}; }catch(e){}
 function laundryTimesOnValue(v){ laundryTimes=v||{}; try{ HA_LS.setItem('ha_laundry_times',JSON.stringify(laundryTimes)); }catch(e){} }
 function laundryT(k){ const d={wash:60,dry:60,grace:30}[k]; const v=parseInt((laundryTimes||{})[k],10); return (v>0&&v<=600)?v:d; }
+// LAUNDRY_NUDGE (audit 2026-10-15 hole 3): settings/laundryTimes/foldHrs = hours a fold pile sits before 🔴 NOW asks to put it away (default 3, 1–72).
+function laundryFoldHrs(){ const v=parseInt((laundryTimes||{}).foldHrs,10); return (v>0&&v<=72)?v:3; }
 function laundryDoneAt(l){ const m=(l&&(l.stage==="washer"||l.stage==="prewash"))?laundryT("wash"):(l&&l.stage==="dryer")?laundryT("dry"):0; return m?(l.ts||0)+m*60000:0; }   // prewash = 💦 WASHTODAY
 function laundryDoneTxt(l){ const d=laundryDoneAt(l); if(!d) return ""; const t=laundrySince(d); return Date.now()>=d?' · <b style="color:#16a34a">done at '+t+'</b>':' · done ~'+t; }
 function laundryEditToggle(){ const go=function(){ laundryEditOpen=!laundryEditOpen; const el=document.getElementById('content'); if(el) renderMomsPlan(el); };
   if(typeof momHere==="function"&&momHere()) go(); else if(typeof kitPinGate==="function") kitPinGate(go,"Laundry times are for Mom."); }
 function laundryTimesSave(){
   const rd=function(id,d){ const v=parseInt(((document.getElementById(id)||{}).value||""),10); return (v>0&&v<=600)?v:d; };
-  laundryTimes={wash:rd('laundry-t-wash',laundryT('wash')),dry:rd('laundry-t-dry',laundryT('dry')),grace:rd('laundry-t-grace',laundryT('grace'))};
+  const rh=function(id,d){ const v=parseInt(((document.getElementById(id)||{}).value||""),10); return (v>0&&v<=72)?v:d; };   // LAUNDRY_NUDGE: fold-pile hours
+  laundryTimes={wash:rd('laundry-t-wash',laundryT('wash')),dry:rd('laundry-t-dry',laundryT('dry')),grace:rd('laundry-t-grace',laundryT('grace')),foldHrs:rh('laundry-t-foldhrs',laundryFoldHrs())};
   try{ HA_LS.setItem('ha_laundry_times',JSON.stringify(laundryTimes)); }catch(e){}
-  if(typeof db!=='undefined'&&db) db.ref('settings/laundryTimes').set(laundryTimes);
+  if(_lbWrite()) db.ref('settings/laundryTimes').set(laundryTimes);
   laundryEditOpen=false; if(typeof mwToast==='function') mwToast('🧺 Laundry times saved'); const el=document.getElementById('content'); if(el) renderMomsPlan(el);
 }
 function laundryTimesEditorHTML(){
   if(!laundryEditOpen) return "";
   const inp='width:64px;padding:7px 8px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:14px;font-family:\'DM Sans\',sans-serif;text-align:center';
-  const row=function(id,lbl,v,hint){ return '<label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px;font-weight:700;color:#1e3a8a"><span style="flex:1">'+lbl+(hint?'<div style="font-size:11px;font-weight:600;color:#64748b">'+hint+'</div>':'')+'</span><input id="'+id+'" type="number" inputmode="numeric" min="1" max="600" value="'+v+'" style="'+inp+'"> min</label>'; };
+  const row=function(id,lbl,v,hint,unit,max){ return '<label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px;font-weight:700;color:#1e3a8a"><span style="flex:1">'+lbl+(hint?'<div style="font-size:11px;font-weight:600;color:#64748b">'+hint+'</div>':'')+'</span><input id="'+id+'" type="number" inputmode="numeric" min="1" max="'+(max||600)+'" value="'+v+'" style="'+inp+'"> '+(unit||'min')+'</label>'; };
   return '<div style="padding:10px 14px;background:#eff6ff;border-bottom:1px solid #dbeafe">'
     +row('laundry-t-wash','🫧 The washer takes',laundryT('wash'))
     +row('laundry-t-dry','🌀 The dryer takes',laundryT('dry'))
     +row('laundry-t-grace','⏰ Remind me after it\'s done for',laundryT('grace'),'Then it shows on Mom\'s Day so nothing sits and sours')
+    +row('laundry-t-foldhrs','🧺 Remind me to put away a fold pile after',laundryFoldHrs(),'',laundryFoldHrs()===1?'hr':'hrs',72)   // LAUNDRY_NUDGE
     +'<div style="display:flex;gap:8px;margin-top:8px"><button onclick="laundryTimesSave()" style="flex:1;padding:9px;border-radius:9px;border:none;background:#2563eb;color:#fff;font-size:13px;font-weight:800;cursor:pointer">Save</button>'
     +'<button onclick="laundryEditToggle()" style="padding:9px 14px;border-radius:9px;border:1.5px solid #cbd5e1;background:#fff;color:#475569;font-size:13px;font-weight:700;cursor:pointer">Cancel</button></div></div>';
 }
@@ -13094,7 +13127,7 @@ function laundryAdd(by){   // 👨 DADFIX: by="dad" from his Day → the load is
   laundryData[id]={label,stage:"washer",ts:Date.now()};
   if(by==="dad") laundryData[id].by="dad";
   try{HA_LS.setItem('ha_laundry',JSON.stringify(laundryData));}catch(e){}
-  if(typeof db!=='undefined'&&db) db.ref('laundry/'+id).set(laundryData[id]);
+  if(_lbWrite()) db.ref('laundry/'+id).set(laundryData[id]);
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
 }
 function laundryAdvance(id){
@@ -13103,14 +13136,15 @@ function laundryAdvance(id){
   const i=LAUNDRY_STAGES.indexOf(l.stage);
   if(l.stage==="bin"||l.stage==="prewash"){   // 💦 WASHTODAY: bin → prewash → (second) wash; each wash starts the washer clock
     l.stage=(l.stage==="bin")?"prewash":"washer"; l.ts=Date.now();
-    if(typeof db!=='undefined'&&db) db.ref('laundry/'+id).set(l);
+    if(_lbWrite()) db.ref('laundry/'+id).set(l);
   } else if(i<0||i===LAUNDRY_STAGES.length-1){
+    try{ if(typeof laundryAwayRemember==="function") laundryAwayRemember(id,l); }catch(e){}   // ↶ CHOREUNDO: this device can bring it back today
     delete laundryData[id]; // put away — load complete
-    if(typeof db!=='undefined'&&db) db.ref('laundry/'+id).remove();
+    if(_lbWrite()) db.ref('laundry/'+id).remove();
     if(typeof mwToast==='function') mwToast('🧺 '+(l.label||'Load')+' put away!');
   } else {
     l.stage=LAUNDRY_STAGES[i+1]; l.ts=Date.now();
-    if(typeof db!=='undefined'&&db) db.ref('laundry/'+id).set(l);
+    if(_lbWrite()) db.ref('laundry/'+id).set(l);
   }
   try{HA_LS.setItem('ha_laundry',JSON.stringify(laundryData));}catch(e){}
   if(typeof tab!=='undefined'&&tab==="schedule"&&typeof renderAll==='function'){ renderAll(); return; }   // MOMSCHED_LAUNDRY: tapped on the schedule
@@ -13119,14 +13153,59 @@ function laundryAdvance(id){
 function laundryDel(id){
   const l=laundryData[id]; if(!l) return;
   if(!confirm('Remove "'+(l.label||'this load')+'"?')) return;
+  _cuDropBlock(id,l.stage);   // LAUNDRY_TINY hole 10 (audit_laundry 2026-10-15): the load's open block went with it — targeted momBlocks/<iso>/<load>_<stage> remove, dry-run inert
   delete laundryData[id];
   try{HA_LS.setItem('ha_laundry',JSON.stringify(laundryData));}catch(e){}
-  if(typeof db!=='undefined'&&db) db.ref('laundry/'+id).remove();
+  if(_lbWrite()) db.ref('laundry/'+id).remove();
+  if(typeof tab!=='undefined'&&tab==="schedule"&&typeof renderAll==='function'){ renderAll(); return; }   // LAUNDRY_TINY hole 11 (2026-10-15): removed from the schedule's ✕ row
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
 }
 function laundryAdvanceLabel(stage){
   return stage==="bin"?"🫧 Start prewash":stage==="prewash"?"🫧 Second wash":stage==="washer"?"→ Dryer":stage==="dryer"?"→ Fold":"✓ Put away";   // bin, prewash = 💦 WASHTODAY
 }
+// LAUNDRY_NUDGE_START — the 🔴 NOW laundry nudges + the Home Base badge, one list (laundry audit 2026-10-15 hole 3, her pick:
+// "a prewash load joins the washer nudge … a fold pile gets its own nudge after N hours"). Before, both tested
+// stage==="washer"||"dryer" only: a 💦 load in its prewash is in the washer on the same clock but never nudged (the very
+// sour-load case the nudge was built for), and a fold pile could sit for days with nothing in NOW.
+//   washer / prewash: laundryT("wash")+grace minutes → "move it before it sours" [→ Dryer / 🫧 Second wash]
+//   dryer:            laundryT("dry")+grace minutes  → "time to fold it" [→ Fold]
+//   fold:             laundryFoldHrs() hours          → "put it away" [✓ Put away]
+//   bin:              LAUNDRY_BIN_NAG_HRS (14) hours → "still in the wash-today bin — start the prewash?" [🫧 Start prewash]
+//                     (hole 9: 💦 Wet or soiled had no clock — a lidded bin of wet sheets sat two days. From the next morning on,
+//                     on Mom's Day AND Dad's Day — laundryBinNowHTML is his 🔴 LAUNDRY NOW box.)
+// Every button is laundryAdvance — no new write path.
+const LAUNDRY_BIN_NAG_HRS=14;
+function laundryNudgeKind(l,now){
+  if(!l||!l.stage) return "";
+  const mins=Math.round(((now||Date.now())-(l.ts||0))/60000);
+  if(l.stage==="washer"||l.stage==="prewash") return mins>=laundryT("wash")+laundryT("grace")?"washer":"";
+  if(l.stage==="dryer") return mins>=laundryT("dry")+laundryT("grace")?"dryer":"";
+  if(l.stage==="fold") return mins>=laundryFoldHrs()*60?"fold":"";
+  if(l.stage==="bin") return mins>=LAUNDRY_BIN_NAG_HRS*60?"bin":"";
+  return "";
+}
+function laundryNudgeList(now,only){
+  const L=(typeof laundryData!=="undefined"&&laundryData)||{}, out=[];
+  Object.keys(L).forEach(function(id){ const k=laundryNudgeKind(L[id],now); if(k&&(!only||only.indexOf(k)>=0)) out.push({id:id,l:L[id],kind:k}); });
+  return out;
+}
+function laundryNudgeRowHTML(x){
+  const l=x.l, lbl='<b>'+esc(l.label||"Load")+'</b>', since=laundrySince(l.ts);
+  const txt=x.kind==="bin"?'💦 <b>'+esc(String(l.label||"Load").replace(/^💦\s*/,""))+'</b> is still in the wash-today bin — start the prewash?'
+    :x.kind==="dryer"?'🌀 '+lbl+' has been in the dryer since '+since+' — time to fold it'
+    :x.kind==="fold"?'🧺 '+lbl+' has been in the fold pile since '+since+' — put it away'
+    :'🫧 '+lbl+' has been in the washer since '+since+' — move it before it sours';
+  return '<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#eff6ff;border-left:3px solid #2563eb;border-radius:8px;margin-bottom:6px">'
+    +'<span style="flex:1;font-size:13px">'+txt+'</span>'
+    +'<button onclick="laundryAdvance(\''+x.id+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">'+((x.kind==="dryer"&&typeof LAUNDRY_FOLDED_BTN!=="undefined")?LAUNDRY_FOLDED_BTN:laundryAdvanceLabel(l.stage))+'</button></div>';   // LAUNDRY_FOLDED: the dryer nudge's button matches the block (merge of PR 61 + 62)
+}
+// Dad's Day: the bin nudge only (his own NOW box, styled like 🔴 KITCHEN NOW).
+function laundryBinNowHTML(now){
+  const L=laundryNudgeList(now||Date.now(),["bin"]); if(!L.length) return "";
+  return '<div style="margin:10px 12px 0;background:#fff;border-radius:12px;padding:10px 12px 4px;box-shadow:0 4px 20px rgba(43,122,120,0.13)">'
+    +'<div style="font-size:11px;font-weight:800;color:#2563eb;letter-spacing:.04em;margin-bottom:6px">🔴 LAUNDRY NOW</div>'+L.map(laundryNudgeRowHTML).join('')+'</div>';
+}
+// LAUNDRY_NUDGE_END
 function laundrySince(ts){
   try{ return new Date(ts).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}); }catch(e){ return ""; }
 }
@@ -13144,9 +13223,29 @@ try{ const _mb=JSON.parse(HA_LS.getItem('ha_momblocks')||"null"); if(_mb&&_mb.is
 try{ laundryBlockMins=JSON.parse(HA_LS.getItem('ha_laundry_block_mins')||"{}")||{}; }catch(e){}
 function _lbWrite(){ return typeof db!=='undefined'&&db&&!(typeof _dryRun==="function"&&_dryRun()); }
 function momBlocksOnValue(v){ momBlocks=v||{}; try{ HA_LS.setItem('ha_momblocks',JSON.stringify({iso:mwTodayIso(),v:momBlocks})); }catch(e){} }
+// MOMBLOCKS_DAYROLL_START — hole 4 of AUDIT_laundry_2026-10-15: momBlocks/<today> was bound ONCE at boot, and the kiosks outlive
+// the day they booted on (see todayDay). A tablet open since Tuesday kept listening to Tuesday's path, so a block Mom set on
+// Wednesday from her phone never reached it: its Mom loop laid her cards without the block and its Mom-mode schedule showed
+// none (its own taps still worked — local write + local state — which is why it looked random). The listener now follows the
+// day: initFb binds it through momBlocksListen(), and dayRollCheck calls it again after midnight, which off()s the old day's
+// path, on()s the new day's, and drops the stale ha_momblocks cache (readers already filter by iso). Writes: none.
+let _mbIso=null, _mbCb=null;
+function momBlocksListen(){
+  if(typeof db==="undefined"||!db) return false;
+  const iso=mwTodayIso(); if(_mbIso===iso) return false;
+  if(_mbIso){
+    try{ db.ref("momBlocks/"+_mbIso).off("value",_mbCb); }catch(e){}
+    momBlocks={}; try{ HA_LS.removeItem('ha_momblocks'); }catch(e){}   // yesterday's blocks are not today's
+  }
+  _mbIso=iso;
+  _mbCb=function(s){ if(_mbIso!==iso) return; if(typeof momBlocksOnValue==="function") momBlocksOnValue(s.val()); if(typeof tab!=="undefined"&&tab==="schedule"&&typeof renderAll==="function") renderAll(); };   // a late event from a day already left is ignored
+  db.ref("momBlocks/"+mwTodayIso()).on("value",_mbCb);
+  return true;
+}
+// MOMBLOCKS_DAYROLL_END
 function laundryBlockMinsOnValue(v){ laundryBlockMins=v||{}; try{ HA_LS.setItem('ha_laundry_block_mins',JSON.stringify(laundryBlockMins)); }catch(e){} }
-function laundryBlockStep(stage){ return stage==="dryer"?"fold":"move"; }
-function laundryBlockDefault(stage){ const k=laundryBlockStep(stage), v=parseInt((laundryBlockMins||{})[k],10); return (v>0&&v<=240)?v:(k==="fold"?15:5); }
+function laundryBlockStep(stage){ return stage==="dryer"?"fold":stage==="fold"?"putaway":"move"; }   // LAUNDRY_FOLD: the fold pile's block is the put-away
+function laundryBlockDefault(stage){ const k=laundryBlockStep(stage), v=parseInt((laundryBlockMins||{})[k],10); return (v>0&&v<=240)?v:(k==="fold"?15:k==="putaway"?10:5); }
 function momBlockKey(id,stage){ return String(id).replace(/[.#$\[\]\/]/g,"_")+"_"+stage; }
 function momBlockFor(id,stage){ const b=(momBlocks||{})[momBlockKey(id,stage)]; return (b&&b.iso===mwTodayIso())?b:null; }
 // The blocks that hold Mom's time right now: picked (Now/After), not done, and the load still in that machine.
@@ -13201,7 +13300,14 @@ function laundryBlockDone(id,stage){
   if(_lbWrite()) db.ref('momBlocks/'+b.iso+'/'+key).update({done:true,doneMin:b.doneMin});
 }
 function _lbBox(bg,bd,inner){ return '<div class="ml-laundry" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;background:'+bg+';border-left:3px solid '+bd+';border-radius:8px">'+inner+'</div>'; }
-function _lbBtn(id,stage){ return '<button onclick="laundryAdvance(\''+_lbQ(id)+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">'+laundryAdvanceLabel(stage)+'</button>'; }
+// LAUNDRY_TINY hole 11 (audit_laundry 2026-10-15): a kid-started load (by:<kid>) that was never a real load redrew its ✅ question at the
+// top of every day with no way off the schedule. Mom mode only → laundryDel (the existing laundry/<id> remove).
+function _lbNotLoadBtn(id,l){ return (l&&l.by&&(typeof momHere!=="function"||momHere()))?'<button onclick="laundryDel(\''+_lbQ(id)+'\')" style="border:none;background:none;color:#9ca3af;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">✕ not a load</button>':''; }
+function _lbBtn(id,stage,label){ return '<button onclick="laundryAdvance(\''+_lbQ(id)+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">'+(label||laundryAdvanceLabel(stage))+'</button>'; }
+// LAUNDRY_FOLDED (AUDIT_laundry_2026-10-15 hole 2, her pick (b), text only): the dryer block's button said "→ Fold", so a tap as she
+// STARTED folding ended her fold time at once. It reads "Folded ✓" — tapped when folding is done. Same tap (laundryAdvance), same
+// minutes; the NOW nudge's dryer button matches.
+const LAUNDRY_FOLDED_BTN="Folded ✓";
 function _lbQBtn(label,on,solid){ return '<button onclick="'+on+'" style="padding:5px 11px;border-radius:8px;border:'+(solid?'none':'1.5px solid #93c5fd')+';background:'+(solid?'#2563eb':'#fff')+';color:'+(solid?'#fff':'#1d4ed8')+';font-size:11.5px;font-weight:800;cursor:pointer;white-space:nowrap">'+label+'</button>'; }
 // ⏰ LAUNDRY_WHEN (her ask 2026-10-11: "Not now on laundry just moves it to dryer it should say when to add in schedule"):
 // Not now no longer drops the question — it opens "When?" (in 30 min · in 1 hr · after school · a time she types). Her pick is
@@ -13232,35 +13338,46 @@ function momSchedLaundry(dayName,dayTasks){
   const place=function(m,ord,html){ if(m<0) m=nowM; if(m>=24*60) return; out.push({m:m,o:ord,html:html}); };   // from an earlier day → now; tomorrow → not today's
   const next=momSchedNextMom(dayTasks);
   Object.keys(laundryData||{}).forEach(function(id){
-    const l=laundryData[id]; if(!l||(l.stage!=="washer"&&l.stage!=="dryer"&&l.stage!=="prewash")) return;   // prewash = 💦 WASHTODAY
-    const dry=l.stage==="dryer", pre=l.stage==="prewash", key=momBlockKey(id,l.stage), lbl='<b>'+esc(l.label||"Load")+'</b>';
+    const l=laundryData[id]; if(!l||(l.stage!=="washer"&&l.stage!=="dryer"&&l.stage!=="prewash"&&l.stage!=="fold")) return;   // prewash = 💦 WASHTODAY · fold = LAUNDRY_FOLD
+    const dry=l.stage==="dryer", pre=l.stage==="prewash", fold=l.stage==="fold", key=momBlockKey(id,l.stage), lbl='<b>'+esc(l.label||"Load")+'</b>';
     const sm=_lbMin(l.ts||0);
-    if(sm>=0) place(sm,0,_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#475569">'+(dry?'🌀 ':'🫧 ')+lbl+' — '+(dry?'in the dryer':pre?'in the washer (prewash)':'in the washer')+' · started '+laundrySince(l.ts)+'</span>'));
-    const da=laundryDoneAt(l); if(!da) return;
-    const b=momBlockFor(id,l.stage), doneTxt='✅ '+lbl+(pre?' — prewash done':' is done in the '+(dry?'dryer':'washer'));
+    // LAUNDRY_FOLD (her report 2026-10-15, DeWalt, Taylor's Wed 10/14 load): the schedule drew the washer and the dryer, then the load
+    // vanished the moment it reached the fold pile — this loop skipped stage "fold", so fold and put away had no row, no question, no
+    // block, and ✓ Put away lived only on Mom's Day. The fold pile has no machine clock: it is "done" the minute it is there (l.ts),
+    // so that one row is both the marker and the question — "🧺 <load> is in the fold pile. Block out time to put it away?" — with
+    // the same How long · Now · After · Not now, a real block (step "putaway", 10 min the first time, remembered like the others)
+    // her Mom cards step over, ✓ Put away on the block, and "✓ Put away: <load>" kept on the timeline where it ended.
+    if(sm>=0&&!fold) place(sm,0,_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#475569">'+(dry?'🌀 ':'🫧 ')+lbl+' — '+(dry?'in the dryer':pre?'in the washer (prewash)':'in the washer')+' · started '+laundrySince(l.ts)+'</span>'));
+    const da=fold?(l.ts||0):laundryDoneAt(l); if(!da) return;   // LAUNDRY_FOLD: the pile is ready when it lands
+    const b=momBlockFor(id,l.stage), doneTxt=fold?'🧺 '+lbl+' is in the fold pile':'✅ '+lbl+(pre?' — prewash done':' is done in the '+(dry?'dryer':'washer'));
     // LAUNDRY_NOTYET (her report 2026-10-12, DeWalt): the "done — block out time?" question drew the moment a load went IN, sitting at
     // its future done time (Mine in at 10:15, wash 50 → "done in the washer" showed at 10:16 under 11:05). Sarah tapped Now and the
     // block landed at 10:16, before the washer had finished. Until the cycle is really over this row only says when — no question.
     if(!b&&_lbMin(da)>_lbNowMin()){ place(_lbMin(da),1,_lbBox('#f8fafc','#cbd5e1','<span style="flex:1;font-size:13px;color:#64748b">⏳ '+lbl+' — done ~'+laundrySince(da)+'</span>')); return; }
+    // LAUNDRY_DADINFO (AUDIT_laundry_2026-10-15 hole 8): a load Dad started (by:"dad", his Day) asked MOM to block time, and drew on
+    // his schedule too — both schedules claimed the same basket. On Mom's schedule it is information only: the started marker and
+    // "done in the …" with no question and no button. Mom's Day Laundry card keeps its buttons (for the day she takes it over); a
+    // block she already picked for it is drawn as before so it never holds her time unseen.
+    if(!b&&l.by==="dad"){ place(_lbMin(da),1,_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:13px;color:#475569">'+doneTxt+' · Dad\'s</span>')); return; }
     if(!b){
       place(_lbMin(da),1,_lbBox('#ecfdf5','#16a34a',
-        '<span style="flex:1 1 100%;font-size:13px">'+doneTxt+'. Block out time to '+(dry?'fold it':pre?'start the second wash':'move it to the dryer')+'?</span>'
+        '<span style="flex:1 1 100%;font-size:13px">'+doneTxt+'. Block out time to '+(fold?'put it away':dry?'fold it':pre?'start the second wash':'move it to the dryer')+'?</span>'
         +'<label style="font-size:12px;color:#334155;font-weight:700">How long? <input id="lb-min-'+key+'" type="number" min="1" max="240" value="'+laundryBlockDefault(l.stage)+'" style="width:54px;padding:4px 6px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12px"> min</label>'
         +_lbQBtn('Now',"laundryBlockSet('"+_lbQ(id)+"','"+l.stage+"','now')",true)
         +(next?_lbQBtn('After '+esc(_lbCardName(next)),"laundryBlockSet('"+_lbQ(id)+"','"+l.stage+"','after','"+_lbQ(next.id)+"')",false):'')
         +_lbQBtn(_lbWhenOpen[key]?'Not now ▴':'Not now',"laundryWhenToggle('"+_lbQ(key)+"')",false)   // ⏰ LAUNDRY_WHEN: asks when
-        +(_lbWhenOpen[key]?_lbWhenHTML(id,l.stage,key):'')));
+        +(_lbWhenOpen[key]?_lbWhenHTML(id,l.stage,key):'')+_lbNotLoadBtn(id,l)));
       return;
     }
-    if(b.at==="skip"){ place(_lbMin(da),1,_lbBox('#ecfdf5','#16a34a','<span style="flex:1;font-size:13px">'+doneTxt+'</span>'+_lbBtn(id,l.stage))); return; }
-    place(_lbMin(da),1,_lbBox('#ecfdf5','#16a34a','<span style="flex:1;font-size:13px">'+doneTxt+'</span>'));
+    if(b.at==="skip"){ place(_lbMin(da),1,_lbBox('#ecfdf5','#16a34a','<span style="flex:1;font-size:13px">'+doneTxt+'</span>'+_lbBtn(id,l.stage)+_lbNotLoadBtn(id,l))); return; }
+    place(_lbMin(da),1,_lbBox('#ecfdf5','#16a34a','<span style="flex:1;font-size:13px">'+doneTxt+'</span>'+_lbNotLoadBtn(id,l)));
     const bm=(_mlBlkLaid&&_mlBlkLaid[key]!==undefined)?_mlBlkLaid[key]:(+b.startMin||nowM);
-    place(bm,2,_lbBox('#eff6ff','#2563eb','<span style="flex:1;font-size:13px">'+(b.at==="later"?'⏰ ':'')+'🧺 '+(dry?'Fold: ':pre?'Second wash: ':'Move to the dryer: ')+lbl
-      +' · <input type="number" min="1" max="240" value="'+(parseInt(b.mins,10)||laundryBlockDefault(l.stage))+'" onchange="laundryBlockMinsEdit(\''+key+'\',this.value)" style="width:48px;padding:2px 5px;border:1.5px solid #bfdbfe;border-radius:6px;font-size:12px"> min</span>'+_lbBtn(id,l.stage)));
+    place(bm,2,_lbBox('#eff6ff','#2563eb','<span style="flex:1;font-size:13px">'+(b.at==="later"?'⏰ ':'')+'🧺 '+(fold?'Put away: ':dry?'Fold: ':pre?'Second wash: ':'Move to the dryer: ')+lbl
+      +' · <input type="number" min="1" max="240" value="'+(parseInt(b.mins,10)||laundryBlockDefault(l.stage))+'" onchange="laundryBlockMinsEdit(\''+key+'\',this.value)" style="width:48px;padding:2px 5px;border:1.5px solid #bfdbfe;border-radius:6px;font-size:12px"> min</span>'+_lbBtn(id,l.stage,dry?LAUNDRY_FOLDED_BTN:"")));   // LAUNDRY_FOLDED
   });
   Object.keys(momBlocks||{}).forEach(function(k){   // finished blocks stay on today's timeline where they ended
     const b=momBlocks[k]; if(!b||b.iso!==mwTodayIso()||!b.done||b.at==="skip") return;
-    place(+b.doneMin||0,3,_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#64748b">✓ '+(b.stage==="dryer"?'Folded: ':b.stage==="prewash"?'Second wash started: ':'Moved to the dryer: ')+'<b>'+esc(b.label||"Load")+'</b></span>'));
+    place(+b.doneMin||0,3,_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#64748b">✓ '+(b.stage==="fold"?'Put away: ':b.stage==="dryer"?'Folded: ':b.stage==="prewash"?'Second wash started: ':'Moved to the dryer: ')+'<b>'+esc(b.label||"Load")+'</b></span>'));
   });
   return out.sort(function(a,b2){ return (a.m-b2.m)||(a.o-b2.o); });
 }
@@ -13361,20 +13478,22 @@ function laundryStartGuess(label){
   return /\b(start|starts|begin|run|wash|load)\b/.test(s)||/\b(put|throw|toss)\b.*\b(in|into)\b/.test(s);
 }
 function laundryLooseWord(label){ const s=String(label||"").toLowerCase(); return !/dish/.test(s)&&/laund|washer|washing|clothes|towel|sheets|\bloads?\b/.test(s); }
-function laundryStarts(st){ if(!st) return false; if(st.laundry===true) return true; if(st.laundry===false) return false; return laundryStartGuess(st.label); }
+function laundryStarts(st){ if(!st) return false; if(st.laundry===true) return true; if(st.laundry===false) return false; if(typeof st.laundry==="string"&&st.laundry) return false; return laundryStartGuess(st.label); }   // a stage string MOVES a load (LAUNDRY_KIDMOVE), never starts one
 function laundryKidId(sk){ return "lk_"+String(sk).replace(/[.#$\[\]\/]/g,"_"); }
 function laundryKidHook(kid,st,sk,now){
+  if(st&&typeof st.laundry==="string"&&st.laundry){ if(now&&typeof laundryKidMove==="function") laundryKidMove(kid,st.laundry); return; }   // LAUNDRY_KIDMOVE: uncheck leaves the load alone
   if(!laundryStarts(st)) return;
   if(typeof _todayDay==="string"&&day!==_todayDay) return;   // back-filling another day's chore isn't a load in the washer now
   const id=laundryKidId(sk), cur=laundryData[id];
   if(now){
     if(cur) return;                                           // already on her card — keep whatever stage Mom moved it to
     laundryData[id]={label:(KID_NAME[kid]||cap(kid))+" started laundry",stage:"washer",ts:Date.now(),by:kid};
-    if(typeof db!=='undefined'&&db) db.ref('laundry/'+id).set(laundryData[id]);
+    if(_lbWrite()) db.ref('laundry/'+id).set(laundryData[id]);
+    try{ if(typeof laundryStartAsk==="function"&&!(typeof _rtMomTick!=="undefined"&&_rtMomTick)) laundryStartAsk(id); }catch(e){}   // LAUNDRY_STARTAT: "In the washer now?" (not on Mom's own tick)
   } else {
     if(!cur||cur.stage!=="washer") return;                    // Mom already moved it on — a stray uncheck doesn't erase it
     delete laundryData[id];
-    if(typeof db!=='undefined'&&db) db.ref('laundry/'+id).remove();
+    if(_lbWrite()) db.ref('laundry/'+id).remove();
   }
   try{HA_LS.setItem('ha_laundry',JSON.stringify(laundryData));}catch(e){}
 }
@@ -13384,8 +13503,107 @@ function cpLaundryBtnHTML(st,i){
   const on=laundryStarts(st);
   return '<button onclick="cpSetLaundry('+i+','+(on?'false':'true')+')" title="'+(on?'Checking this off puts a load on Mom\u2019s Laundry card \u2014 tap to stop':'Tap if checking this off means a load is in the washer')+'" style="margin-top:3px;margin-right:4px;border:1.5px solid '+(on?"#2563eb":"var(--border)")+';background:'+(on?"#eff6ff":"#fff")+';color:'+(on?"#1d4ed8":"var(--muted)")+';border-radius:7px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F9FA} '+(on?'Tells Mom':'Tell Mom?')+'</button>';
 }
-function cpSetLaundry(i,v){ if(!momHere()) return; rtCfgSet(cpSlot,cpKid,i,"laundry",!!v); renderAll(); }
+function cpSetLaundry(i,v){ if(!momHere()) return; rtCfgSet(cpSlot,cpKid,i,"laundry",(typeof v==="string")?(LAUNDRY_KIDMOVE_FROM[v]?v:null):!!v); renderAll(); }   // LAUNDRY_KIDMOVE: "dryer"/"fold"/"putaway", "" = back to the guess
 // KIDLAUNDRY_END
+// LAUNDRY_KIDMOVE_START — a kid can MOVE a load, not only start one (AUDIT_laundry_2026-10-15 hole 6; her ask 2026-10-16). DeWalt's
+// "Fold and put away a load of laundry" grab got done and Mom's pile still said "in the fold pile" (and kept asking her to block time
+// for it); a chore like "Move the laundry to the dryer" could only start a NEW load, never advance the one that was there.
+// The step's `laundry` field widens: true | false | "dryer" | "fold" | "putaway" (the 🧺 picker on the Chore Plan row, Mom only;
+// on an Up for Grabs row the picker offers the three moves). Checking such a step off (or ✓ on such a grab) takes the NEWEST load
+// sitting at the stage before it — washer → "dryer", dryer → "fold", fold pile → "putaway" — and moves it one stage, ending that
+// stage's Mom block the way laundryAdvance does. No load at that stage → the check-off just banks as usual. Uncheck does nothing to
+// the load (Mom may have moved on). Another day's back-filled check moves nothing (same guard as KIDLAUNDRY).
+// Writes, targeted, dry-run inert (_lbWrite): laundry/<id> update {stage,ts} (label and `by` kept) or laundry/<id> remove (put away),
+// momBlocks/<iso>/<load>_<stage> update {done,doneMin} via laundryBlockDone.
+const LAUNDRY_KIDMOVE_FROM={dryer:"washer",fold:"dryer",putaway:"fold"};
+const LAUNDRY_KIDMOVE_OPTS=[["","—"],["dryer","→ moves a load to the dryer"],["fold","→ moves a load to the fold pile"],["putaway","✓ puts a folded load away"]];
+function laundryKidMovePick(to){
+  const from=LAUNDRY_KIDMOVE_FROM[to], L=(typeof laundryData!=="undefined"&&laundryData)||{}; if(!from) return null;
+  const ids=Object.keys(L).filter(function(id){ return L[id]&&L[id].stage===from; });
+  ids.sort(function(a,b){ return ((L[b].ts||0)-(L[a].ts||0))||(a<b?1:a>b?-1:0); });
+  return ids[0]||null;
+}
+function laundryKidMove(kid,to){
+  const from=LAUNDRY_KIDMOVE_FROM[to]; if(!from) return null;
+  if(typeof _todayDay==="string"&&typeof day!=="undefined"&&day!==_todayDay) return null;   // back-filling another day moves nothing today
+  const id=laundryKidMovePick(to); if(!id) return null;
+  const l=laundryData[id];
+  try{ if(typeof laundryBlockDone==="function") laundryBlockDone(id,from); }catch(e){}   // ends that stage's block, as laundryAdvance does
+  if(to==="putaway"){
+    try{ if(typeof laundryAwayRemember==="function") laundryAwayRemember(id,l); }catch(e){}   // ↶ CHOREUNDO, as laundryAdvance does
+    delete laundryData[id];
+    if(_lbWrite()) db.ref('laundry/'+id).remove();
+  } else {
+    l.stage=to; l.ts=Date.now();
+    if(_lbWrite()) db.ref('laundry/'+id).update({stage:l.stage,ts:l.ts});
+  }
+  try{HA_LS.setItem('ha_laundry',JSON.stringify(laundryData));}catch(e){}
+  return id;
+}
+function _lkmSelectHTML(cur,on){
+  return '<select onchange="'+on+'" title="Checking this off moves Mom\u2019s newest load along" style="margin-top:3px;margin-right:4px;border:1.5px solid '+(cur?"#2563eb":"var(--border)")+';background:'+(cur?"#eff6ff":"#fff")+';color:'+(cur?"#1d4ed8":"var(--muted)")+';border-radius:7px;padding:1px 4px;font-size:10.5px;font-weight:700;font-family:\'DM Sans\',sans-serif">'
+    +LAUNDRY_KIDMOVE_OPTS.map(function(o){ return '<option value="'+o[0]+'"'+(o[0]===cur?' selected':'')+'>\u{1F9FA} '+o[1]+'</option>'; }).join('')+'</select>';
+}
+// Chore Plan list row: the stage picker beside 🧺 Tell Mom? (same rows). Mom only — cpSetLaundry checks momHere().
+function cpLaundryMoveHTML(st,i){
+  if(!st||!((typeof st.laundry==="string"&&st.laundry)||st.laundry===true||st.laundry===false||laundryLooseWord(st.label))) return "";
+  const cur=(typeof st.laundry==="string"&&LAUNDRY_KIDMOVE_FROM[st.laundry])?st.laundry:"";
+  return _lkmSelectHTML(cur,"cpSetLaundry("+i+",this.value)");
+}
+// Up for Grabs row: the same three moves (gbSet checks momHere()).
+function cpGrabLaundryHTML(g,i){
+  if(!g||!((typeof g.laundry==="string"&&g.laundry)||laundryLooseWord(g.label))) return "";
+  const cur=(typeof g.laundry==="string"&&LAUNDRY_KIDMOVE_FROM[g.laundry])?g.laundry:"";
+  return '<div>'+_lkmSelectHTML(cur,"gbSet("+i+",\'laundry\',this.value)")+'</div>';
+}
+function gbLaundryMove(kid,i){ const g=(typeof gbList==="function")?gbList()[i]:null; if(g&&typeof g.laundry==="string"&&LAUNDRY_KIDMOVE_FROM[g.laundry]) return laundryKidMove(kid,g.laundry); return null; }
+// LAUNDRY_KIDMOVE_END
+// LAUNDRY_STARTAT_START — a kid-started load's clock starts when it really went in (AUDIT_laundry_2026-10-15 hole 7; her "ok"
+// 2026-10-15). Taylor's Monday 10/12 log had seven morning steps checked inside four seconds at 9:39 — a batch check at the end
+// of the morning — so the load's ts (the check time) put "done ~10:29" an hour late and the "started 9:39" marker was a fiction.
+// Now, when a kid's check-off starts a load (KIDLAUNDRY), one question pops up, once: "In the washer now?" [Yes] [Earlier…].
+// Yes = the clock starts now; Earlier… opens a time picker (today, never later than now). One extra tap, only on laundry-start
+// steps; nothing else in the kids' flow changes, and Mom's own tick from her Day doesn't ask. If Mom has already moved the load on
+// by the time the answer comes, the answer is dropped.
+// Writes: laundry/<id>/ts (the existing field; targeted, dry-run inert via _lbWrite).
+let _lsaId=null, _lsaEarly=false;
+function laundryStartAsk(id){ _lsaId=id; _lsaEarly=false; _lsaPaint(); }
+function _lsaHHMM(t){ const d=new Date(t); return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); }
+function laundryStartAskHTML(earlier,now){
+  const big='padding:14px 22px;border-radius:12px;font-size:17px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;';
+  const body=earlier
+    ?'<div style="font-weight:800;font-size:18px;margin:4px 0 12px">What time did it go in?</div>'
+      +'<input id="lsa-time" type="time" value="'+_lsaHHMM(now||Date.now())+'" style="font-size:20px;padding:10px;border:1.5px solid #cbd5e1;border-radius:10px;font-family:\'DM Sans\',sans-serif">'
+      +'<div style="display:flex;gap:10px;justify-content:center;margin-top:14px">'
+      +'<button onclick="laundryStartAnswer((document.getElementById(\'lsa-time\')||{}).value||null)" style="'+big+'border:none;background:#2563eb;color:#fff">Save</button>'
+      +'<button onclick="laundryStartEarlier(false)" style="'+big+'border:1.5px solid #cbd5e1;background:#fff;color:#475569">Back</button></div>'
+    :'<div style="font-weight:800;font-size:20px;margin:4px 0 14px">In the washer now?</div>'
+      +'<div style="display:flex;gap:10px;justify-content:center">'
+      +'<button onclick="laundryStartAnswer(null)" style="'+big+'border:none;background:#2563eb;color:#fff">Yes</button>'
+      +'<button onclick="laundryStartEarlier(true)" style="'+big+'border:1.5px solid #93c5fd;background:#fff;color:#1d4ed8">Earlier…</button></div>';
+  return '<div style="position:fixed;inset:0;z-index:100000;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px">'
+    +'<div style="background:#fff;border-radius:16px;padding:22px 20px;width:100%;max-width:320px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.35)">'
+    +'<div style="font-size:40px">\u{1F9FA}</div>'+body+'</div></div>';
+}
+function _lsaPaint(){
+  if(typeof document==="undefined"||!document.body) return;
+  let w=document.getElementById("lsa-wrap"); if(!w){ w=document.createElement("div"); w.id="lsa-wrap"; document.body.appendChild(w); }
+  w.innerHTML=_lsaId?laundryStartAskHTML(_lsaEarly):"";
+}
+function laundryStartEarlier(on){ if(!_lsaId) return; _lsaEarly=!!on; _lsaPaint(); }
+// hhmm null = Yes (now); "HH:MM" = earlier today (a time still to come counts as now).
+function laundryStartAnswer(hhmm,nowMs){
+  const id=_lsaId; _lsaId=null; _lsaEarly=false; _lsaPaint();
+  const l=id&&laundryData[id]; if(!l||l.stage!=="washer") return null;   // Mom already moved it on, or it was unchecked
+  const now=nowMs||Date.now(); let ts=now;
+  const m=/^(\d{1,2}):(\d{2})$/.exec(String(hhmm||""));
+  if(m){ const d=new Date(now); d.setHours(+m[1],+m[2],0,0); if(d.getTime()<now) ts=d.getTime(); }
+  l.ts=ts;
+  if(_lbWrite()) db.ref('laundry/'+id+'/ts').set(ts);
+  try{HA_LS.setItem('ha_laundry',JSON.stringify(laundryData));}catch(e){}
+  return ts;
+}
+// LAUNDRY_STARTAT_END
 // WASHTODAY_START — 💦 "Wet or soiled" (her laundry system 2026-10-09; PR 1 of the Household plan; her "yes" 2026-10-09 after
 // the talk-through). Anything WET — accident sheets, a soaked towel, a wet dog blanket — goes in the lidded wash-today bin by
 // the washer, never in a hamper, and runs that night or next morning as an extra load, WASHED TWICE ("prewash for all,
@@ -13440,6 +13658,300 @@ function wtRowHTML(who){
     +'</div>';
 }
 // WASHTODAY_END
+// CHOREUNDO_START — ↶ Undo and today's ledger (her ask 2026-10-15: "For the laundry check-off I need an undo button. The kids
+// checked off that they did it and I'd be like, no, it didn't. Or if I clicked the wrong one. I need a way to adjust and go back —
+// no, this didn't actually get done; yes, this is actually done … open everything and say okay, this isn't right, this was done,
+// move this, this didn't get done, move it back"). Mom only (momHere()); kids' pages never show a button from here.
+//   (1) ↶ Undo on a checked chore (Mom's Day ▸ Kids today ▸ 📋 lists, and the ledger below). It is the kid's own check-off run in
+//       reverse through KIDTICK's mdKidTick, so the list, the completion bonus and a kid-started laundry load (KIDLAUNDRY) all
+//       follow exactly as an uncheck does — but the wages come back off as a REVERSAL, never a silent flip or delete (her rule:
+//       points are wages, banked on the check): bank/<kid>/adjustments/<new> {amount:−paid, note:"↶ Mom undid: <chore>"} sits
+//       beside the original +paid, and the routineLog "off" line carries undo:"mom". A held (chore-verify) payment never reached
+//       the kid, so it is removed as before. ✓ Done is the other way: the normal check-off, wages banked again.
+//   (2) ↶ Today's ledger (a card on Mom's Day right under 🧒 Kids today; never on Dad's Day): every kid's list steps for today, done and open, each
+//       flippable both ways; every laundry load with ↶ back a stage and its forward button; loads put away today on THIS device
+//       with ↶ back to the fold pile (✓ Put away deletes laundry/<id>, so only the device that tapped it remembers the load —
+//       localStorage ha_laundry_away, today only; no new Firebase path).
+// ↶ back a stage: washer ← dryer ← fold pile ← put away (wet: wash-today bin ← prewash ← washer). The load goes back in that
+// machine shown as finished now (it is sitting there done), and today's Mom blocks for BOTH stages are removed, so the "block out
+// time?" question comes back instead of a stale ✓ row or an orphan block (AUDIT_laundry_2026-10-15 hole 10: not made worse).
+// Writes, all targeted, laundry ones dry-run inert (_lbWrite): laundry/<id> update {stage,ts} · laundry/<id> set (put-away
+// restore) · momBlocks/<iso>/<load>_<stage> remove. A chore undo / ✓ Done rides the existing check-off writes (<wk>/sl as every
+// check-off writes it, bank/<kid>/adjustments/<id>, routineLog/<kid>/<wk>/<day>/<key>, laundry/lk_* via KIDLAUNDRY).
+let _cuMom=false, cuLedgerOpen=false;
+// Called from the check-off's uncheck branch: true = the reversal is banked here (the caller then leaves the +paid entry alone).
+function cuUnpay(kid,bid,label){
+  if(!_cuMom) return false;
+  const a=(typeof bank!=="undefined"&&bank[kid]&&bank[kid].adjustments&&bank[kid].adjustments[bid])||null;
+  if(!a||a.held||!(a.amount>0)) return false;   // held = never paid → the old removal is the reversal
+  bankDirect(kid,-a.amount,"↶ Mom undid: "+(label||"chore"));
+  return true;
+}
+function _cuDone(slot,kid,d,i){ return slot==="morning"?!!(typeof mStepDoneOn==="function"&&mStepDoneOn(kid,d,i)):!!rtDoneOn(slot,kid,d,i); }
+function _cuMomOk(){ return typeof momHere==="function"&&momHere(); }
+function choreUndo(slot,kid,d,i){
+  if(!_cuMomOk()||!_cuDone(slot,kid,d,i)) return false;
+  _cuMom=true; try{ mdKidTick(slot,kid,d,i); } finally { _cuMom=false; }
+  return !_cuDone(slot,kid,d,i);
+}
+function choreRedo(slot,kid,d,i){
+  if(!_cuMomOk()||_cuDone(slot,kid,d,i)) return false;
+  mdKidTick(slot,kid,d,i);
+  return _cuDone(slot,kid,d,i);
+}
+function choreFlip(slot,kid,d,i){ return _cuDone(slot,kid,d,i)?choreUndo(slot,kid,d,i):choreRedo(slot,kid,d,i); }
+function _cuBtn(on,txt,col,title){ return '<button onclick="event.stopPropagation();'+on+'"'+(title?' title="'+title+'"':'')+' style="flex-shrink:0;padding:2px 8px;border-radius:7px;border:1.5px solid '+col+';background:#fff;color:'+col+';font-size:10.5px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">'+txt+'</button>'; }
+function choreUndoBtnHTML(slot,kid,d,i){ return _cuMomOk()?_cuBtn("choreUndo('"+slot+"','"+kid+"','"+d+"',"+i+")","↶ undo","#b45309","Not really done — back to not done, stars back off"):""; }
+// ── laundry: back a stage ──
+function laundryBackStage(l){
+  if(!l||!l.stage||l.stage==="bin") return null;
+  const STG=(l.wet||l.stage==="prewash")?["bin"].concat(LAUNDRY_WET_STAGES):LAUNDRY_STAGES; const i=STG.indexOf(l.stage);
+  return i>0?STG[i-1]:null;
+}
+function _cuStageName(s){ const m=LAUNDRY_STAGE_META[s]; return m?m[0]+" "+m[1]:s; }
+function _cuCycleMin(s){ return (s==="washer"||s==="prewash")?laundryT("wash"):s==="dryer"?laundryT("dry"):0; }
+function _cuDropBlock(id,stage){
+  const k=momBlockKey(id,stage), b=(momBlocks||{})[k]; if(!b) return null;
+  delete momBlocks[k]; momBlocksOnValue(momBlocks);
+  if(_lbWrite()) db.ref('momBlocks/'+(b.iso||mwTodayIso())+'/'+k).remove();
+  return k;
+}
+function _cuRe(){
+  if(typeof tab!=="undefined"&&tab==="schedule"&&typeof renderAll==="function"){ renderAll(); return; }
+  const el=(typeof document!=="undefined")?document.getElementById('content'):null; if(el&&typeof renderMomsPlan==="function") renderMomsPlan(el);
+}
+function laundryBack(id){
+  if(!_cuMomOk()) return null;
+  const l=laundryData[id], prev=laundryBackStage(l); if(!prev) return null;
+  const from=l.stage; _cuDropBlock(id,from); _cuDropBlock(id,prev);
+  l.stage=prev; l.ts=Date.now()-_cuCycleMin(prev)*60000;   // back in that machine, finished now
+  try{ HA_LS.setItem('ha_laundry',JSON.stringify(laundryData)); }catch(e){}
+  if(_lbWrite()) db.ref('laundry/'+id).update({stage:l.stage,ts:l.ts});
+  _cuRe(); return {from:from,to:prev};
+}
+function laundryBackBtnHTML(id,l){ const p=laundryBackStage(l); return (p&&_cuMomOk())?_cuBtn("laundryBack('"+_lbQ(id)+"')","↶","#64748b","Back to "+_cuStageName(p)):""; }
+// Put away today, remembered on this device only.
+function _cuAwayGet(){ try{ const o=JSON.parse(HA_LS.getItem('ha_laundry_away')||"null"); return (o&&o.iso===mwTodayIso()&&o.v)?o.v:{}; }catch(e){ return {}; } }
+function _cuAwayPut(v){ try{ HA_LS.setItem('ha_laundry_away',JSON.stringify({iso:mwTodayIso(),v:v})); }catch(e){} }
+function laundryAwayRemember(id,l){ if(!l) return; const v=_cuAwayGet(); v[id]={load:JSON.parse(JSON.stringify(l)),at:Date.now()}; _cuAwayPut(v); }
+function laundryAwayList(){ const v=_cuAwayGet(); return Object.keys(v).filter(function(id){ return !laundryData[id]&&v[id]&&v[id].load; }).map(function(id){ return {id:id,load:v[id].load,at:v[id].at||0}; }).sort(function(a,b){ return b.at-a.at; }); }
+function laundryUnputaway(id){
+  if(!_cuMomOk()) return null;
+  const v=_cuAwayGet(), r=v[id]; if(!r||!r.load||laundryData[id]) return null;
+  _cuDropBlock(id,"fold");   // LAUNDRY_FOLD's ✓ Put away row goes; the pile asks again
+  const rec=Object.assign({},r.load,{stage:"fold",ts:Date.now()}); laundryData[id]=rec; delete v[id]; _cuAwayPut(v);
+  try{ HA_LS.setItem('ha_laundry',JSON.stringify(laundryData)); }catch(e){}
+  if(_lbWrite()) db.ref('laundry/'+id).set(rec);
+  _cuRe(); return rec;
+}
+// ── the ledger ──
+function cuLedgerToggle(){ cuLedgerOpen=!cuLedgerOpen; _cuRe(); }
+// → [{slot,i,label,emoji,pts,done,ts,undone}] — every list step due today (or checked today), waved ones left out (WAVE owns those).
+function cuLedgerRows(kid,d){
+  const out=[], wk=activeWk(), L=((((typeof routineLog!=="undefined"&&routineLog)||{})[kid]||{})[wk]||{})[d]||{};
+  SL_SLOTS.forEach(function(slot){
+    const steps=(slot==="morning"&&typeof morningStepsFor==="function")?morningStepsFor(kid):(rtStepsFor(slot,kid,false,d)||[]);
+    steps.forEach(function(st,i){ if(!st) return; if(typeof rtWaved==="function"&&rtWaved(slot,kid,d,i)) return;
+      const due=(slot==="morning")?(stepWindowOk(st,d)&&cadDueOn(st.cad||"daily",d)):rtDueOrLate(slot,kid,d,i,st), done=_cuDone(slot,kid,d,i); if(!due&&!done) return;
+      const s=slState[wk+"_"+d+"_"+kid+"_"+(slot==="morning"?"m":RT_ABBR[slot])+"step"+i]||{};
+      const undone=Object.keys(L).filter(function(k){ const r=L[k]; return r&&r.undo==="mom"&&r.slot===slot&&r.label===(st.label||""); }).length;
+      out.push({slot:slot,i:i,label:st.label||"",emoji:st.emoji||"",pts:(done&&s.pts!=null)?s.pts:(st.pts||0),done:done,ts:done?String(s.ts||"").replace(/\s+[A-Z][a-z]{2}\s+\d+$/,""):"",undone:undone}); });
+  });
+  return out;
+}
+function mdCardChoreLedger(){
+  if(!_cuMomOk()||typeof _todayDay!=="string") return "";
+  const d=_todayDay, _pd=day; let kids=[];
+  try{ day=d; kids=ROSTER.map(function(k){ return {kid:k,rows:cuLedgerRows(k,d)}; }).filter(function(x){ return x.rows.length; }); } finally { day=_pd; }
+  const lids=Object.keys(laundryData||{}).sort(function(a,b){ return (laundryData[a].ts||0)-(laundryData[b].ts||0); }), away=laundryAwayList();
+  if(!kids.length&&!lids.length&&!away.length) return "";
+  let nDone=0, nOpen=0; kids.forEach(function(x){ x.rows.forEach(function(r){ if(r.done) nDone++; else nOpen++; }); });
+  let h='<div style="margin:10px 12px;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
+  h+='<div onclick="cuLedgerToggle()" style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#92400e;color:#fff;font-weight:800;font-size:13px;cursor:pointer"><span>↶</span> Today’s ledger · ✓ '+nDone+' · ☐ '+nOpen+(lids.length||away.length?' · 🧺 '+(lids.length+away.length):'')+'<span style="margin-left:auto;font-size:12px;opacity:.8">'+(cuLedgerOpen?'▲':'▼')+'</span></div>';
+  if(!cuLedgerOpen) return h+'</div>';
+  h+='<div style="padding:6px 14px 10px">';
+  kids.forEach(function(x){
+    h+='<div style="font-size:11px;font-weight:800;color:'+((typeof PACE_KCOL!=="undefined"&&PACE_KCOL[x.kid])||"#111827")+';margin:8px 0 2px">'+esc((typeof KID_NAME!=="undefined"&&KID_NAME[x.kid])||cap(x.kid))+'</div>';
+    let slot=null;
+    x.rows.forEach(function(r){
+      if(r.slot!==slot){ slot=r.slot; h+='<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:4px 0 1px">'+esc((typeof SL_SLBL!=="undefined"&&SL_SLBL[slot])||slot)+'</div>'; }
+      const q="'"+r.slot+"','"+x.kid+"','"+d+"',"+r.i;
+      h+='<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #f3f4f6;font-size:12px;font-weight:600">'
+        +'<span>'+(r.done?'✅':'☐')+'</span><span style="flex:1;min-width:0">'+(r.emoji?r.emoji+' ':'')+esc(r.label)+(r.pts>0?' <span style="color:#b45309;font-weight:800">'+r.pts+'⭐</span>':'')
+        +(r.ts?' <span style="font-size:10.5px;color:var(--muted)">'+esc(r.ts)+'</span>':'')+(r.undone?' <span style="font-size:10.5px;color:#b45309;font-weight:800">↶ undone'+(r.undone>1?' ×'+r.undone:'')+'</span>':'')+'</span>'
+        +(r.done?_cuBtn("choreUndo("+q+")","↶ Undo","#b45309","Not really done — back to not done, stars back off"):_cuBtn("choreRedo("+q+")","✓ Done","#16a34a","It was done — check it off, stars banked"))+'</div>';
+    });
+  });
+  if(lids.length||away.length){
+    h+='<div style="font-size:11px;font-weight:800;color:#1d4ed8;margin:10px 0 2px">🧺 Laundry</div>';
+    lids.forEach(function(id){ const l=laundryData[id], p=laundryBackStage(l);
+      h+='<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #f3f4f6;font-size:12px;font-weight:600;flex-wrap:wrap"><span style="flex:1;min-width:0">'+esc(l.label||'Load')+' <span style="font-size:10.5px;color:#1d4ed8;font-weight:800">'+esc(_cuStageName(l.stage))+'</span></span>'
+        +(p?_cuBtn("laundryBack('"+_lbQ(id)+"')","↶ "+esc(_cuStageName(p)),"#64748b","Move it back a stage"):'')+_cuBtn("laundryAdvance('"+_lbQ(id)+"')",laundryAdvanceLabel(l.stage),"#2563eb","")+'</div>'; });
+    away.forEach(function(a){
+      h+='<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #f3f4f6;font-size:12px;font-weight:600;color:#64748b"><span style="flex:1;min-width:0">✓ Put away '+esc(laundrySince(a.at))+': '+esc(a.load.label||'Load')+'</span>'
+        +_cuBtn("laundryUnputaway('"+_lbQ(a.id)+"')","↶ "+esc(_cuStageName("fold")),"#64748b","Not put away — back to the fold pile")+'</div>'; });
+  }
+  h+='<div style="font-size:10.5px;color:var(--muted);margin-top:8px">↶ Undo takes the stars back off (the Star Bank shows “↶ Mom undid”); ✓ Done banks them. A load moved back shows as finished in that machine, and its schedule question comes back.</div>';
+  return h+'</div></div>';
+}
+// CHOREUNDO_END
+// SPOTCHECK_START — 🔎 Spot check (her ask 2026-10-15: "All the things the kids do each day, a rotation or a random pick of a few
+// things handed to Mom to check each day, and keep a record. If things are checked and not actually done, they become something
+// that gets checked more — we are having an issue with lying and checking off things, and this is not acceptable. If a kid has
+// things not done, more things get checked the next time." Her answers: SILENT on the kid's side; a "not done" costs only the
+// item's own points). Mom only (momHere()), one card on Mom's Day under 🧒 Kids today; never on Dad's Day, never on a kid's page.
+//   Pool: that day's SELF-checked items per kid — list chores, laundry steps, and school cards the kid checked themselves.
+//   Out: anything Mom (or Dad's link) checked — the check-off now carries by:"mom"/"dad" on the step (<wk>/sl) and on the school
+//   card's history entry — a helper's card, a Mom-verified subject, a family card, and waved chores (WAVE).
+//   Count: 2 per kid to start. Drawn at random once the school day ends (Settings, default 4:15 PM) or when Mom taps 🎲 Draw now,
+//   then FIXED for the day: spotChecks/<kid>/<iso> is written by a transaction that keeps whichever device drew first.
+//   ✓ Really done → recorded. ✗ Not done → CHOREUNDO's undo for that item (back to not done, its own stars reversed as
+//   "↶ Mom undid"; a school card goes back through the card's own ↩ Unmark) + recorded.
+//   Escalation: each ✗ raises that kid's count +1 (cap 5) and keeps that item's TYPE (chore / laundry / school) in the draw while
+//   raised; each clean day (every pick checked, none ✗) lowers it −1 (floor 2; back at 2 the kept types clear). A day Mom didn't
+//   finish checking changes nothing.
+// Writes, all targeted, dry-run inert: spotChecks/<kid>/<iso> (transaction, the draw) · spotChecks/<kid>/<iso>/results/<n> set ·
+// spotChecks/<kid>/level set {n,types,settled}.
+const SP_MIN=2, SP_MAX=5;
+let spotData={}, spRecOpen="", _spDrawn={};
+try{ spotData=JSON.parse(HA_LS.getItem('ha_spot')||"{}")||{}; }catch(e){}
+function spotOnValue(v){ spotData=v||{}; try{ HA_LS.setItem('ha_spot',JSON.stringify(spotData)); }catch(e){} }
+function _spWrite(){ return typeof db!=='undefined'&&db&&!(typeof _dryRun==="function"&&_dryRun()); }
+function _spMomOk(){ return typeof momHere==="function"&&momHere(); }
+// Who is ticking right now, when it isn't the kid: stamped on the check-off so the pool can leave it out.
+function _spBy(){ try{ if(typeof momHere==="function"&&momHere()) return "mom"; if(typeof _kioskD==="function"&&_kioskD()) return "dad"; }catch(e){} return null; }
+function _spIso(){ return (typeof mwTodayIso==="function")?mwTodayIso():""; }
+function _spTs(ts){ return String(ts||"").replace(/\s+[A-Z][a-z]{2}\s+\d+$/,""); }
+function spLevel(kid){ const l=((spotData[kid]||{}).level)||{}; const n=Math.max(SP_MIN,Math.min(SP_MAX,parseInt(l.n,10)||SP_MIN)); return {n:n,types:Object.assign({},l.types||{}),settled:l.settled||""}; }
+function _spSetLevel(kid,l){
+  spotData[kid]=spotData[kid]||{}; spotData[kid].level=l; spotOnValue(spotData);
+  if(_spWrite()) db.ref("spotChecks/"+kid+"/level").set(l);
+}
+function spStepType(st){ const lb=(st&&st.label)||""; return ((typeof laundryLooseWord==="function"&&laundryLooseWord(lb))||(typeof laundryStarts==="function"&&laundryStarts(st)))?"laundry":"chore"; }
+const SP_TYPE={chore:"🧹 chore",laundry:"🧺 laundry",school:"📚 school"};
+// → [{k,kind,slot,i,id,label,emoji,type,ts,pts}] — today's self-checked items for one kid.
+function spPool(kid,d){
+  const out=[], wk=activeWk();
+  SL_SLOTS.forEach(function(slot){
+    const steps=(slot==="morning"&&typeof morningStepsFor==="function")?morningStepsFor(kid):(rtStepsFor(slot,kid,false,d)||[]);
+    steps.forEach(function(st,i){ if(!st) return;
+      if(typeof rtWaved==="function"&&rtWaved(slot,kid,d,i)) return;   // WAVE: waved, not checked
+      const s=slState[wk+"_"+d+"_"+kid+"_"+(slot==="morning"?"m":RT_ABBR[slot])+"step"+i];
+      if(!s||!s.done||s.by) return;   // not done, or Mom / Dad ticked it
+      out.push({k:"s:"+slot+":"+i,kind:"step",slot:slot,i:i,d:d,label:st.label||"",emoji:st.emoji||"",type:spStepType(st),ts:_spTs(s.ts),pts:s.pts||0}); });
+  });
+  try{
+    ((weekData&&weekData.tasks)||[]).forEach(function(t){
+      if(!t||t.who!==kid||!t.id||!checked[t.id]||String(t.id).endsWith("_c")||t.famBlock) return;
+      if(effectiveDay(t)!==d||(typeof _ckLogTodayTs==="function"&&!_ckLogTodayTs(checked[t.id]))) return;
+      const h=(histState&&histState[t.id])||null; if(!h||h.by||h.helper) return;   // Mom / Dad / a helper checked it
+      if(typeof needsVerify==="function"&&needsVerify(t)) return;                    // Mom already checks this subject
+      out.push({k:"t:"+t.id,kind:"task",id:t.id,d:d,label:t.title||"",emoji:"",type:"school",ts:_spTs(checked[t.id]),pts:0});
+    });
+  }catch(e){}
+  return out;
+}
+// Random draw of n, the kept types first (one each, while the pool has one).
+function spDraw(pool,n,types,rnd){
+  rnd=rnd||Math.random; const left=pool.slice(), out=[];
+  const take=function(arr){ const x=arr[Math.floor(rnd()*arr.length)]; left.splice(left.indexOf(x),1); out.push(x); };
+  Object.keys(types||{}).forEach(function(ty){ if(out.length>=n) return; const c=left.filter(function(p){ return p.type===ty; }); if(c.length) take(c); });
+  while(out.length<n&&left.length) take(left);
+  return out;
+}
+// Clean days since the last settle lower the count, one per day.
+function spSettle(kid,iso){
+  const all=spotData[kid]||{}, l=spLevel(kid);
+  const days=Object.keys(all).filter(function(k){ return /^\d{4}-\d{2}-\d{2}$/.test(k)&&k<iso&&k>l.settled; }).sort();
+  if(!days.length) return l;
+  days.forEach(function(k){ const r=all[k]||{}, p=r.picks||[], res=r.results||{};
+    const any=p.some(function(x,j){ return res[j]&&res[j].r==="no"; }), every=p.length&&p.every(function(x,j){ return res[j]&&res[j].r; });
+    if(every&&!any){ l.n=Math.max(SP_MIN,l.n-1); if(l.n===SP_MIN) l.types={}; } });
+  l.settled=days[days.length-1]; _spSetLevel(kid,l); return l;
+}
+function spDue(){ try{ const n=new Date(), m=n.getHours()*60+n.getMinutes(); return m>=((typeof rvSchoolEndMin==="function")?rvSchoolEndMin():16*60+15); }catch(e){ return false; } }
+function spDay(kid,iso){ return ((spotData[kid]||{})[iso||_spIso()])||null; }
+function spEnsureDraw(kid,force){
+  if(!_spMomOk()||typeof _todayDay!=="string") return null;
+  const iso=_spIso(), cur=spDay(kid,iso); if(cur&&cur.picks) return cur;
+  if(!force&&!spDue()) return null;
+  if(_spDrawn[kid+"|"+iso]) return null;
+  const l=spSettle(kid,iso), pool=spPool(kid,_todayDay); if(!pool.length) return null;
+  const picks=spDraw(pool,l.n,l.types).map(function(p){ const o={}; Object.keys(p).forEach(function(k){ if(p[k]!==undefined) o[k]=p[k]; }); return o; });
+  const rec={n:l.n,at:Date.now(),picks:picks};
+  _spDrawn[kid+"|"+iso]=1; spotData[kid]=spotData[kid]||{}; spotData[kid][iso]=rec; spotOnValue(spotData);
+  if(_spWrite()) db.ref("spotChecks/"+kid+"/"+iso).transaction(function(c){ return (c&&c.picks)?undefined:rec; });   // first device's draw stands
+  return rec;
+}
+function spDrawNow(kid){ spEnsureDraw(kid,true); if(typeof _cuRe==="function") _cuRe(); }
+// ✓ / ✗ for one pick. ✗ runs CHOREUNDO's undo (or the school card's ↩ Unmark) and raises the count.
+function spResolve(kid,j,r){
+  if(!_spMomOk()||(r!=="ok"&&r!=="no")) return false;
+  const iso=_spIso(), rec=spDay(kid,iso); if(!rec||!rec.picks||!rec.picks[j]) return false;
+  if(rec.results&&rec.results[j]) return false;
+  const p=rec.picks[j];
+  if(r==="no"){
+    if(typeof confirm==="function"&&!confirm("Not done?\n\n“"+(p.label||"")+"” goes back to not done for "+((typeof KID_NAME!=="undefined"&&KID_NAME[kid])||cap(kid))+(p.pts>0?", and its "+p.pts+" ⭐ come back off":"")+".")) return false;
+    if(p.kind==="step"){
+      let i=p.i; const steps=(p.slot==="morning"&&typeof morningStepsFor==="function")?morningStepsFor(kid):(rtStepsFor(p.slot,kid,false,p.d)||[]);
+      if(!steps[i]||(steps[i].label||"")!==p.label){ const f=steps.findIndex(function(s){ return s&&(s.label||"")===p.label; }); if(f>=0) i=f; }   // the list was edited since the draw
+      if(typeof choreUndo==="function"&&_cuDone(p.slot,kid,p.d,i)) choreUndo(p.slot,kid,p.d,i);
+    } else if(p.kind==="task"&&checked[p.id]){
+      try{ const b=document.getElementById("dlg-uncheck"); if(b&&typeof b.onclick==="function"){ pendingId=p.id; pendingClaimMode=false; b.onclick(); } }catch(e){ dbg("spot check unmark: "+e); }
+    }
+  }
+  const l=spLevel(kid), res={r:r,at:Date.now(),ts:(typeof nowTs==="function")?nowTs():"",n:rec.n||l.n};
+  rec.results=rec.results||{}; rec.results[j]=res; spotOnValue(spotData);
+  if(_spWrite()) db.ref("spotChecks/"+kid+"/"+iso+"/results/"+j).set(res);
+  if(r==="no"){ l.n=Math.min(SP_MAX,l.n+1); l.types[p.type||"chore"]=true; _spSetLevel(kid,l); }
+  if(typeof _cuRe==="function") _cuRe();
+  return true;
+}
+function spRecToggle(kid){ spRecOpen=(spRecOpen===kid)?"":kid; if(typeof _cuRe==="function") _cuRe(); }
+// → [{iso,label,type,r,n}] newest first
+function spRecord(kid){
+  const all=spotData[kid]||{}, out=[];
+  Object.keys(all).filter(function(k){ return /^\d{4}-\d{2}-\d{2}$/.test(k); }).sort().reverse().forEach(function(k){ const r=all[k]||{}, res=r.results||{};
+    (r.picks||[]).forEach(function(p,j){ out.push({iso:k,label:p.label||"",emoji:p.emoji||"",type:p.type||"",ts:p.ts||"",r:(res[j]&&res[j].r)||"",n:(res[j]&&res[j].n)||r.n||SP_MIN}); }); });
+  return out;
+}
+function _spEndLbl(){ try{ return fromMin((typeof rvSchoolEndMin==="function")?rvSchoolEndMin():16*60+15); }catch(e){ return "4:15 PM"; } }
+function mdCardSpotCheck(){
+  if(!_spMomOk()||typeof _todayDay!=="string") return "";
+  const iso=_spIso(), d=_todayDay, _pd=day; let rows=[];
+  try{ day=d; rows=ROSTER.map(function(k){ spEnsureDraw(k,false); return {kid:k,rec:spDay(k,iso),lvl:spLevel(k),pool:spPool(k,d).length}; }); } finally { day=_pd; }
+  let todo=0; rows.forEach(function(x){ const p=(x.rec&&x.rec.picks)||[], res=(x.rec&&x.rec.results)||{}; p.forEach(function(q,j){ if(!res[j]) todo++; }); });
+  let h='<div style="margin:10px 12px;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
+  h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#1e3a8a;color:#fff;font-weight:800;font-size:13px"><span>🔎</span> Spot check'+(todo?' · '+todo+' to check':'')+'</div>';
+  h+='<div style="padding:6px 14px 10px">';
+  rows.forEach(function(x){
+    const kid=x.kid, nm=esc((typeof KID_NAME!=="undefined"&&KID_NAME[kid])||cap(kid)), p=(x.rec&&x.rec.picks)||[], res=(x.rec&&x.rec.results)||{};
+    h+='<div style="display:flex;align-items:center;gap:6px;margin:8px 0 2px"><span style="font-size:11px;font-weight:800;color:'+((typeof PACE_KCOL!=="undefined"&&PACE_KCOL[kid])||"#111827")+'">'+nm+'</span>'
+      +'<span style="font-size:10.5px;font-weight:700;color:'+(x.lvl.n>SP_MIN?'#b91c1c':'var(--muted)')+'">'+x.lvl.n+' a day'+(x.lvl.n>SP_MIN?' ▲':'')+'</span>'
+      +'<span style="margin-left:auto">'+_cuBtn("spRecToggle('"+kid+"')",(spRecOpen===kid?'▲ ':'')+"📜 record","#1e3a8a","Every spot check for "+nm)+'</span></div>';
+    if(!p.length){
+      h+='<div style="display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);padding:2px 0 4px"><span style="flex:1">'+(x.pool?'Picks are drawn at '+esc(_spEndLbl())+' from '+x.pool+' thing'+(x.pool===1?'':'s')+' '+nm+' checked off.':'Nothing '+nm+' checked off themselves yet today.')+'</span>'
+        +(x.pool?_cuBtn("spDrawNow('"+kid+"')","🎲 Draw now","#1e3a8a","Pick today's spot checks now"):'')+'</div>';
+    }
+    p.forEach(function(q,j){ const r=res[j];
+      h+='<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #f3f4f6;font-size:12px;font-weight:600;flex-wrap:wrap">'
+        +'<span style="flex:1;min-width:0">'+(q.emoji?q.emoji+' ':'')+esc(q.label)+' <span style="font-size:10px;color:var(--muted);font-weight:700">'+esc(SP_TYPE[q.type]||q.type||"")+(q.ts?' · ticked '+esc(q.ts):'')+'</span></span>'
+        +(r?(r.r==="no"?'<span style="font-size:11px;font-weight:800;color:#b91c1c">✗ Not done</span>':'<span style="font-size:11px;font-weight:800;color:#16a34a">✓ Really done</span>')
+           :_cuBtn("spResolve('"+kid+"',"+j+",'ok')","✓ Really done","#16a34a","I looked — it was done")+_cuBtn("spResolve('"+kid+"',"+j+",'no')","✗ Not done","#b91c1c","Not done — back to not done, its own stars back off"))+'</div>';
+    });
+    if(spRecOpen===kid){
+      const rec=spRecord(kid);
+      h+='<div style="margin:4px 0 6px;padding:6px 8px;background:#f8fafc;border-radius:8px;font-size:11px">';
+      if(!rec.length) h+='<div style="color:var(--muted)">No spot checks yet.</div>';
+      rec.forEach(function(e){ h+='<div style="display:flex;gap:6px;padding:2px 0;border-bottom:1px solid #eef2f0"><span style="flex:0 0 74px;color:var(--muted)">'+esc(e.iso)+'</span><span style="flex:1;min-width:0">'+(e.emoji?e.emoji+' ':'')+esc(e.label)+'</span>'
+        +'<span style="font-weight:800;color:'+(e.r==="no"?'#b91c1c':e.r==="ok"?'#16a34a':'#9ca3af')+'">'+(e.r==="no"?'✗ not done':e.r==="ok"?'✓ done':'— not checked')+'</span><span style="flex:0 0 34px;text-align:right;color:var(--muted)">'+e.n+'/day</span></div>'; });
+      h+='</div>';
+    }
+  });
+  h+='<div style="font-size:10.5px;color:var(--muted);margin-top:8px">Only what a kid checked off themselves is picked. ✗ Not done puts it back to not done and takes its own stars back off; each ✗ adds one more check a day for that kid (up to '+SP_MAX+'), and every clean day takes one away (down to '+SP_MIN+'). The kids never see this.</div>';
+  return h+'</div></div>';
+}
+// SPOTCHECK_END
 
 // ── 💳 Bills — recurring due dates that surface as they approach ──────
 // "✓ Paid" stamps paidThrough with the current cycle key, which rolls the bill
@@ -13664,6 +14176,76 @@ function mdCardBills(iso){
 // ── 🧺 Laundry card ───────────────────────────
 // Extracted from renderMomsDay (2026-08-15) so Dad's Day can render the SAME card
 // against the SAME data — he marks it, it's marked on her page too. One truth, not a copy.
+// LAUNDRYEDIT_START — ✎ Edit a load (her yes 2026-10-15: "would I also be able to edit loads"). Mom only (momHere()); the ✎ sits
+// on each load of the Laundry card and opens a small sheet under it: Name · Stage (bin / prewash / washer / dryer / fold pile) ·
+// Started at · Whose (mom / dad / a kid — the `by` field) · 💦 Wet or soiled. It answers AUDIT_laundry_2026-10-15 holes 7 and 12:
+// a kid's batch check-off at 9:39 put the load's clock at 9:39 (hole 7), and a quick wash that is quiet at 9:31 waits for a 9:51
+// "done" (hole 12) — she sets Started at to the real minute (or back, so it is done now). Started at left as shown keeps the load's
+// clock; a new stage with Started at untouched starts that stage's clock now, the same as → Dryer does.
+// Save = ONE targeted update on laundry/<id> (changed fields only; mom = by removed, wet off = wet removed). A stage change also
+// removes today's Mom blocks for the old and the new stage, the way ↶ laundryBack (CHOREUNDO) does, so no stale "block out time?"
+// answer or orphan block is left. Writes (dry-run inert, _lbWrite): laundry/<id> update · momBlocks/<iso>/<load>_<stage> remove.
+const LAUNDRY_EDIT_STAGES=["bin","prewash","washer","dryer","fold"];
+let laundryEditId=null;
+function _leHM(ts){ const d=new Date(ts||0); return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); }
+function _leRe(){
+  if(typeof tab!=="undefined"&&tab==="schedule"&&typeof renderAll==="function"){ renderAll(); return; }
+  const el=(typeof document!=="undefined")?document.getElementById('content'):null; if(el&&typeof renderMomsPlan==="function") renderMomsPlan(el);
+}
+function laundryEditLoad(id){
+  if(!(typeof momHere==="function"&&momHere())||!laundryData[id]) return;
+  laundryEditId=(laundryEditId===id)?null:id; _leRe();
+}
+function laundryEditBtnHTML(id){
+  if(!(typeof momHere==="function"&&momHere())) return "";
+  return '<button onclick="laundryEditLoad(\''+_lbQ(id)+'\')" title="Edit this load" style="border:none;background:none;color:#2563eb;font-size:13px;font-weight:800;cursor:pointer;padding:2px 4px">✎</button>';
+}
+function laundryEditSheetHTML(id){
+  if(laundryEditId!==id||!(typeof momHere==="function"&&momHere())) return "";
+  const l=laundryData[id]; if(!l) return "";
+  const k=String(id).replace(/[^A-Za-z0-9_-]/g,"_");
+  const inp='padding:5px 8px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12.5px;font-family:\'DM Sans\',sans-serif';
+  const row=function(lbl,ctl){ return '<label style="display:flex;align-items:center;gap:8px;margin:5px 0;font-size:12px;font-weight:700;color:#1e3a8a"><span style="width:78px">'+lbl+'</span>'+ctl+'</label>'; };
+  const opt=function(v,t,on){ return '<option value="'+v+'"'+(on?' selected':'')+'>'+t+'</option>'; };
+  const ro=(typeof ROSTER!=="undefined"&&ROSTER)||[], nm=function(x){ return (typeof KID_NAME!=="undefined"&&KID_NAME[x])||cap(x); };
+  const by=l.by||"mom";
+  let who=opt("mom","Mom",by==="mom")+opt("dad","Dad",by==="dad")+ro.map(function(x){ return opt(x,esc(nm(x)),by===x); }).join("");
+  if(by!=="mom"&&by!=="dad"&&ro.indexOf(by)<0) who+=opt(esc(by),esc(cap(by)),true);
+  return '<div class="laundry-edit" style="flex:1 1 100%;padding:8px 10px;margin-top:4px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px">'
+    +row('Name','<input id="le-name-'+k+'" type="text" value="'+esc(l.label||"")+'" style="flex:1;'+inp+'">')
+    +row('Stage','<select id="le-stage-'+k+'" style="'+inp+'">'+LAUNDRY_EDIT_STAGES.map(function(s){ const m=LAUNDRY_STAGE_META[s]; return opt(s,m[0]+' '+m[1],s===l.stage); }).join("")+'</select>')
+    +row('Started at','<input id="le-ts-'+k+'" type="time" value="'+_leHM(l.ts)+'" style="'+inp+'">')
+    +row('Whose','<select id="le-by-'+k+'" style="'+inp+'">'+who+'</select>')
+    +row('💦 Wet','<input id="le-wet-'+k+'" type="checkbox"'+(l.wet?' checked':'')+'> <span style="font-weight:600;color:#475569">Wet or soiled (washed twice)</span>')
+    +'<div style="display:flex;gap:8px;margin-top:6px"><button onclick="laundryEditSave(\''+_lbQ(id)+'\')" style="flex:1;padding:7px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:12.5px;font-weight:800;cursor:pointer">Save</button>'
+    +'<button onclick="laundryEditLoad(\''+_lbQ(id)+'\')" style="padding:7px 12px;border-radius:8px;border:1.5px solid #cbd5e1;background:#fff;color:#475569;font-size:12.5px;font-weight:700;cursor:pointer">Cancel</button></div></div>';
+}
+function laundryEditSave(id){
+  if(!(typeof momHere==="function"&&momHere())) return null;
+  const l=laundryData[id]; if(!l) return null;
+  const k=String(id).replace(/[^A-Za-z0-9_-]/g,"_"), g=function(f){ return (typeof document!=="undefined")?document.getElementById('le-'+f+'-'+k):null; };
+  const nameEl=g('name'), stEl=g('stage'), tsEl=g('ts'), byEl=g('by'), wetEl=g('wet');
+  const up={};
+  const name=String((nameEl&&nameEl.value)||"").trim(); if(name&&name!==(l.label||"")) up.label=name;
+  const st=stEl&&stEl.value; if(st&&LAUNDRY_EDIT_STAGES.indexOf(st)>=0&&st!==l.stage) up.stage=st;
+  const tv=String((tsEl&&tsEl.value)||""), m=/^(\d{1,2}):(\d{2})$/.exec(tv);
+  if(m&&tv!==_leHM(l.ts)){
+    const d=new Date(); d.setHours(+m[1],+m[2],0,0);
+    if(d.getTime()>Date.now()){ if(typeof mwToast==='function') mwToast('🧺 Started at can\'t be later than now'); return null; }
+    up.ts=d.getTime();
+  } else if(up.stage) up.ts=Date.now();   // a new stage, clock untouched → that stage starts now (as → Dryer does)
+  const by=byEl&&byEl.value; if(by&&by!==(l.by||"mom")) up.by=(by==="mom")?null:by;
+  if(wetEl&&!!wetEl.checked!==!!l.wet) up.wet=wetEl.checked?true:null;
+  laundryEditId=null;
+  if(!Object.keys(up).length){ _leRe(); return up; }
+  if(up.stage){ _cuDropBlock(id,l.stage); _cuDropBlock(id,up.stage); }   // ↶ CHOREUNDO's way: no stale question, no orphan block
+  Object.keys(up).forEach(function(f){ if(up[f]===null) delete l[f]; else l[f]=up[f]; });
+  try{ HA_LS.setItem('ha_laundry',JSON.stringify(laundryData)); }catch(e){}
+  if(_lbWrite()) db.ref('laundry/'+id).update(up);
+  if(typeof mwToast==='function') mwToast('🧺 '+(l.label||'Load')+' updated');
+  _leRe(); return up;
+}
+// LAUNDRYEDIT_END
 function mdCardLaundry(noAdd){   // 🧺 LAUNDRYADD: noAdd = Mom's Day, where "Start a load" sits under the to-do box
   let h='';
   try{
@@ -13683,8 +14265,10 @@ function mdCardLaundry(noAdd){   // 🧺 LAUNDRYADD: noAdd = Mom's Day, where "S
         +'<span style="font-size:13px;font-weight:700">'+esc(l.label)+'</span>'+trail
         +'<span style="font-size:10px;color:var(--muted)">'+meta[1]+' since '+laundrySince(l.ts)+laundryDoneTxt(l)+'</span>'
         +'<span style="flex:1"></span>'
-        +'<button onclick="laundryAdvance(\''+id+'\')" style="padding:4px 12px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">'+laundryAdvanceLabel(l.stage)+'</button>'
-        +'<button onclick="laundryDel(\''+id+'\')" style="border:none;background:none;color:#9ca3af;font-size:14px;cursor:pointer;padding:2px 4px">✕</button></div>';
+        +((typeof laundryBackBtnHTML==="function")?laundryBackBtnHTML(id,l):'')+'<button onclick="laundryAdvance(\''+id+'\')" style="padding:4px 12px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">'+laundryAdvanceLabel(l.stage)+'</button>'
+        +((typeof laundryEditBtnHTML==="function")?laundryEditBtnHTML(id):'')   // ✎ LAUNDRYEDIT (Mom only)
+        +'<button onclick="laundryDel(\''+id+'\')" style="border:none;background:none;color:#9ca3af;font-size:14px;cursor:pointer;padding:2px 4px">✕</button>'
+        +((typeof laundryEditSheetHTML==="function")?laundryEditSheetHTML(id):'')+'</div>';
     });
     if(!lids.length) h+='<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Nothing running. Start a load below — it\'ll nudge you in 🔴 NOW if it sits in the washer.</div>';
     if(!noAdd) h+='<div style="display:flex;gap:8px;margin-top:'+(lids.length?'8':'0')+'px">'
@@ -14076,6 +14660,8 @@ function mdCardKidsToday(today,isSchoolDay,bank,dadCtl){   // bank=true: Mom's D
     h+='</div>';
   });
   h+='</div></div>';
+  if(bank&&dadCtl===undefined&&typeof mdCardChoreLedger==="function"){ try{ h+=mdCardChoreLedger(); }catch(e){} }   // ↶ CHOREUNDO: today's ledger under Kids today (Mom's Day only)
+  if(bank&&dadCtl===undefined&&typeof mdCardSpotCheck==="function"){ try{ h+=mdCardSpotCheck(); }catch(e){} }   // 🔎 SPOTCHECK: Mom's Day only
 
   return h;
 }
@@ -14217,11 +14803,7 @@ function hbAlertItems(){
     Object.keys(billsData||{}).forEach(id=>{ const st=billState(billsData[id],iso); if(st.state==="overdue"||st.state==="due") add("remind","bill_"+id+"_"+st.due); });
   }catch(e){}
   try{
-    Object.keys(laundryData||{}).forEach(id=>{
-      const l=laundryData[id]; if(!l||(l.stage!=="washer"&&l.stage!=="dryer")) return;
-      const mins=Math.round((Date.now()-(l.ts||0))/60000);
-      if(mins>=(l.stage==="dryer"?laundryT("dry"):laundryT("wash"))+laundryT("grace")) add("remind","wash_"+id+"_"+l.stage+"_"+(l.ts||0));
-    });
+    laundryNudgeList(Date.now()).forEach(x=>add("remind","wash_"+x.id+"_"+x.l.stage+"_"+(x.l.ts||0)));   // LAUNDRY_NUDGE: same list as 🔴 NOW
   }catch(e){}
   try{ kitDuePrep().forEach(s=>add("remind","prep_"+s.iso+"_"+s.mid+"_"+s.idx)); }catch(e){}
   try{ hhLevelReadyList().forEach(it=>add("remind","level_"+it.who+"_"+it.next)); }catch(e){}   // 🪜 LEVELREADY
@@ -14403,19 +14985,8 @@ function renderMomsDay(el){
   try{ const _ap=_momApprovalsHTML(); nowN+=_ap.n; h+=_ap.html; }catch(e){}
   try{ const _sa=mstAlertsNowHTML(); nowN+=_sa.n; h+=_sa.html; }catch(e){}   // 🚩 study sessions rushed / missed / not done / stuck cards
   try{ const _lr=hhLevelReadyNowHTML(); nowN+=_lr.n; h+=_lr.html; }catch(e){}   // 🪜 LEVELREADY: a person's meter says move up
-  // Load sitting in the washer too long — the nudge that saves a re-wash.
-  try{
-    Object.keys(laundryData).forEach(id=>{
-      const l=laundryData[id];
-      if(!l||(l.stage!=="washer"&&l.stage!=="dryer")) return;
-      const mins=Math.round((Date.now()-(l.ts||0))/60000);
-      if(mins<(l.stage==="dryer"?laundryT("dry"):laundryT("wash"))+laundryT("grace")) return;
-      nowN++;
-      h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#eff6ff;border-left:3px solid #2563eb;border-radius:8px;margin-bottom:6px">'
-        +(l.stage==="dryer"?'<span style="flex:1;font-size:13px">🌀 <b>'+esc(l.label)+'</b> has been in the dryer since '+laundrySince(l.ts)+' — time to fold it</span>':'<span style="flex:1;font-size:13px">🫧 <b>'+esc(l.label)+'</b> has been in the washer since '+laundrySince(l.ts)+' — move it before it sours</span>')
-        +'<button onclick="laundryAdvance(\''+id+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">'+laundryAdvanceLabel(l.stage)+'</button></div>';
-    });
-  }catch(e){}
+  // Load sitting in the washer / dryer / fold pile too long — the nudge that saves a re-wash (LAUNDRY_NUDGE).
+  try{ laundryNudgeList(Date.now()).forEach(x=>{ nowN++; h+=laundryNudgeRowHTML(x); }); }catch(e){}
   // Bills that can't wait — overdue or due today — with one-tap ✓ Paid.
   try{
     const hot=Object.keys(billsData).map(id=>({id,b:billsData[id],st:billState(billsData[id],iso)}))
@@ -22816,11 +23387,11 @@ function _gbEarn(i,kid){ var g=gbList()[i]; if(!g) return;
   if(_paid>0 && typeof bankDirect==="function") bankDirect(kid, _paid, (g.emoji?g.emoji+" ":"")+(g.label||"grab")+(_bonus?" (zone bonus +"+_bonus+")":""));
   if(typeof rlogAppend==="function") rlogAppend(kid,"grab",(g.emoji?g.emoji+" ":"")+(g.label||"grab")+(_bonus?" (zone bonus +"+_bonus+")":""),"on",_paid); }
 function gbPayout(i){ var g=gbList()[i]||{}; return (g.pts||0)+zoneBonusFor(g.zone,g.pts||0); }
-function gbInstant(kid,i){ var s=gbCur(i); if(s&&s.done) return; _gbWrite(i,{by:kid,done:true,ts:nowTs()}); _gbStampDone(i,kid); _gbEarn(i,kid); renderAll(); if(typeof gwShowToast==="function") gwShowToast("Nice! +"+((gbList()[i]||{}).pts||0)+" ⭐"); }
+function gbInstant(kid,i){ var s=gbCur(i); if(s&&s.done) return; _gbWrite(i,{by:kid,done:true,ts:nowTs()}); _gbStampDone(i,kid); _gbEarn(i,kid); try{ if(typeof gbLaundryMove==="function") gbLaundryMove(kid,i); }catch(e){} renderAll(); if(typeof gwShowToast==="function") gwShowToast("Nice! +"+((gbList()[i]||{}).pts||0)+" ⭐"); }
 function gbClaim(kid,i){ var s=gbCur(i); if(s&&s.by&&s.by!==kid) return;
   if(gbHasActive(kid)){ if(typeof gwShowToast==="function") gwShowToast("One at a time — finish your grabbed chore first!"); return; }
   _gbWrite(i,{by:kid,done:false,ts:nowTs()}); renderAll(); }
-function gbMarkDone(kid,i){ var s=gbCur(i); if(!s||s.by!==kid||s.done) return; _gbWrite(i,{by:kid,done:true,ts:nowTs()}); _gbStampDone(i,kid); _gbEarn(i,kid); renderAll(); if(typeof gwShowToast==="function") gwShowToast("Done! +"+((gbList()[i]||{}).pts||0)+" ⭐"); }
+function gbMarkDone(kid,i){ var s=gbCur(i); if(!s||s.by!==kid||s.done) return; _gbWrite(i,{by:kid,done:true,ts:nowTs()}); _gbStampDone(i,kid); _gbEarn(i,kid); try{ if(typeof gbLaundryMove==="function") gbLaundryMove(kid,i); }catch(e){} renderAll(); if(typeof gwShowToast==="function") gwShowToast("Done! +"+((gbList()[i]||{}).pts||0)+" ⭐"); }
 function gbLetGo(kid,i){ var s=gbCur(i); if(!s||s.by!==kid||s.done) return; _gbWrite(i,null); renderAll(); }
 // STORELOCK_START — 🔒 Star Store edits need the Mom PIN EVERY time (her ask 2026-10-07: Kenzie set a reward to "$5 for 1 star"
 // on a tablet where Mom mode had been left on — UNIMOM keeps Mom mode on a device, so momHere() alone let her in). Adding,
@@ -25566,6 +26137,39 @@ function lidsFor(kid,sk){
   if(!s||!Array.isArray(s.lessonIds)||!Array.isArray(s.lessonSeq)||s.lessonIds.length!==s.lessonSeq.length) return null;
   return s.lessonIds;
 }
+// EGGQUIZ_START — a Reading Eggs quiz is its own lesson (her ask 2026-10-15: "Reading Eggs, Ellis —
+// when he has a quiz it needs to be its own lesson. He's malfunctioning when he has a quiz and a
+// lesson … just have his quiz as that day's Reading Eggs"). His list carried "Map 21 L5 + Quiz" as
+// ONE line, so one card asked for Lesson 5 and the quiz in one sitting. On save, an UNFINISHED line
+// "<lesson> + Quiz" in a Reading Eggs / Reading Eggspress subject becomes two lines in a row:
+// "<lesson>" (keeps the line's id) then "<map> Quiz" (a fresh id). Finished lines are never touched —
+// renaming one would orphan its ✓ and re-serve it. Only Reading Eggs subjects (matched on the
+// subject's name / pace label / keyword), nothing else.
+const EGGQUIZ_RE=/^(.*\S)\s*\+\s*quiz\s*$/i;
+function eqIsEggs(kid,sk,s){
+  const ps=(((typeof paceData!=="undefined"&&paceData&&paceData.subjects)||{})[kid]||{})[sk]||{};
+  const df=(typeof PACE_DEFAULT_SUBJECTS!=="undefined"&&PACE_DEFAULT_SUBJECTS[kid]&&PACE_DEFAULT_SUBJECTS[kid][sk])||{};
+  return [s&&s.display,s&&s.name,ps.label,ps.keyword,df.label,df.keyword].some(t=>/\breading\s*eggs/i.test(String(t||"")));
+}
+// "Map 22 L5" → "Map 22 Quiz"; a label with no trailing lesson token just gains " Quiz".
+function eqQuizLabel(pre){ const m=String(pre).replace(/\s*\bL\d+\s*$/i,""); return (m&&m!==pre?m:pre)+" Quiz"; }
+// Pure. seq = lines; ids = parallel ids (or null: plain text, e.g. a brand-new list); done = Set of
+// finished ids (or null); next = next id number. Returns {seq,ids,nextLid,n}, n = lines split.
+function eqSplit(seq,ids,done,next){
+  const out=[], oid=ids?[]:null; let n=0;
+  next=Math.max(1,parseInt(next,10)||1);
+  (seq||[]).forEach((t,i)=>{
+    const m=EGGQUIZ_RE.exec(String(t));
+    if(!m||(ids&&done&&done.has(ids[i]))){ out.push(t); if(oid) oid.push(ids[i]); return; }
+    const pre=m[1].trim(), q=eqQuizLabel(pre);
+    out.push(pre); if(oid) oid.push(ids[i]);
+    // Already followed by its own quiz line (typed both) → just drop the "+ Quiz".
+    if(_lidNorm(seq[i+1])===_lidNorm(q)) { n++; return; }
+    out.push(q); if(oid) oid.push(_lidMake(next++)); n++;
+  });
+  return {seq:out,ids:oid,nextLid:next,n};
+}
+// EGGQUIZ_END
 // THE one writer. Updates the in-memory subject and folds
 // subjects/<kid>/<sk>/{lessonSeq,lessonIds,total,nextLid} into opts.patch (caller
 // sends the multi-path update). newSeq null → clears the list AND the ids.
@@ -25582,7 +26186,16 @@ function setLessonSeq(kid,sk,newSeq,opts){
   const seq=(newSeq||[]).map(x=>String(x==null?"":x));
   let ids=null, next=s.nextLid;
   if(Array.isArray(opts.restoreIds)&&opts.restoreIds.length===seq.length){ ids=opts.restoreIds.slice(); next=opts.restoreNext||Math.max(parseInt(next,10)||1,_lidNextFrom(ids)); }
-  else{ const r=_lidAlign(s.lessonSeq,s.lessonIds,seq,s.nextLid,opts.hint,!!opts.mint); ids=r.ids; next=r.nextLid; }
+  else{ const r=_lidAlign(s.lessonSeq,s.lessonIds,seq,s.nextLid,opts.hint,!!opts.mint); ids=r.ids; next=r.nextLid;
+    // EGGQUIZ: plan-backed only — there the LIST is the truth and `done` (by id) says what's finished.
+    // A list copied from grid cells must mirror the cells exactly, so it is left alone. Undo/restore
+    // (restoreIds) never reaches here, and the ids-only mint (gvAssignLids) only runs on unstamped,
+    // so never plan-backed, subjects.
+    if(ids&&typeof planBacked==="function"&&planBacked(kid,sk)&&eqIsEggs(kid,sk,s)){
+      const sp=eqSplit(seq,ids,lidDoneSet(kid,sk),next);
+      if(sp.n){ seq.length=0; sp.seq.forEach(x=>seq.push(x)); ids=sp.ids; next=sp.nextLid; }
+    }
+  }
   s.lessonSeq=seq; s.total=seq.length;
   patch[base+"lessonSeq"]=seq; patch[base+"total"]=seq.length;
   if(ids){ s.lessonIds=ids; s.nextLid=next; patch[base+"lessonIds"]=ids; patch[base+"nextLid"]=next; }
@@ -26960,6 +27573,8 @@ function ceAddSave(){
     }
     if((parseInt(f.daysPerLesson,10)||1)>1) lessonSeq=lessonExpandDays(lessonSeq,f.daysPerLesson);
     if(!lessonSeq.length){ alert("Add at least one lesson."); return; }
+    // EGGQUIZ: a brand-new list has nothing finished — every "+ Quiz" line becomes lesson, then quiz.
+    if(typeof eqSplit==="function"&&eqIsEggs(ceAddKid,null,{display:name})) lessonSeq=eqSplit(lessonSeq,null,null,1).seq;
     subj={display:name,device:f.device,mom:f.mom,minutes:f.minutes,days:f.days,allowedDays:dayArr,rules:f.rules,total:lessonSeq.length,priority:f.priority,carryoverCap:f.carryoverCap,lessonSeq:lessonSeq,timesPerWeek:f.timesPerWeek||5};
     { const _r=_lidAlign(null,null,lessonSeq,1,null,true); subj.lessonIds=_r.ids; subj.nextLid=_r.nextLid; }   // born with ids — no other device can hold a competing set
   }
@@ -28111,8 +28726,8 @@ function renderChorePlan(el,headerHtml){
        (!isGrabs?('<div><button onclick="rtRotToggle(\''+cpSlot+'\',\''+cpKid+'\','+i+')" title="Swap this chore between kids day by day" style="margin-top:3px;border:1.5px solid '+(st.rot?"#fb923c":"var(--border)")+';background:'+(st.rot?"#fff7ed":"#fff")+';color:'+(st.rot?"#c2410c":"var(--muted)")+';border-radius:7px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔄 '+(st.rot?esc(rtRotChipLabel(cpSlot,st.rot)):"Rotate")+'</button>'+
        (Object.keys(MEAL_SLOT).filter(function(m){ return MEAL_SLOT[m]===cpSlot; }).map(function(m){ const on=(st.meal===m);
          return '<button onclick="cpSetMeal('+i+',\''+(on?'':m)+'\')" title="Show under After '+esc(mealCfg()[m])+'" style="margin-top:3px;margin-right:4px;border:1.5px solid '+(on?"#fb923c":"var(--border)")+';background:'+(on?"#fff7ed":"#fff")+';color:'+(on?"#c2410c":"var(--muted)")+';border-radius:7px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+MEAL_EMOJI[m]+' '+(on?'After '+esc(mealCfg()[m]):'Meal job?')+'</button>'; }).join(''))+
-       ((typeof cpLaundryBtnHTML==="function")?cpLaundryBtnHTML(st,i):'')+
-       '<button onclick="rtCadToggle(\''+_ck+'\')" title="Cadence, time of day, and run window" style="margin-top:3px;margin-left:4px;border:1.5px solid '+((cad!=="daily"||st.time||st.from||st.to||st.cycW)?"var(--header)":"var(--border)")+';background:#fff;color:var(--muted);border-radius:7px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔁 '+esc(cadLabel(cad))+(st.time?(" · ⏰ "+esc(st.time)):"")+((st.from||st.to||st.cycW)?(" · 📅 "+esc(stepWindowLabel(st))):"")+' '+(_co?"▾":"▸")+'</button></div>'):'')+'</td>';
+       ((typeof cpLaundryBtnHTML==="function")?cpLaundryBtnHTML(st,i):'')+((typeof cpLaundryMoveHTML==="function")?cpLaundryMoveHTML(st,i):'')+
+       '<button onclick="rtCadToggle(\''+_ck+'\')" title="Cadence, time of day, and run window" style="margin-top:3px;margin-left:4px;border:1.5px solid '+((cad!=="daily"||st.time||st.from||st.to||st.cycW)?"var(--header)":"var(--border)")+';background:#fff;color:var(--muted);border-radius:7px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔁 '+esc(cadLabel(cad))+(st.time?(" · ⏰ "+esc(st.time)):"")+((st.from||st.to||st.cycW)?(" · 📅 "+esc(stepWindowLabel(st))):"")+' '+(_co?"▾":"▸")+'</button></div>'):((typeof cpGrabLaundryHTML==="function")?cpGrabLaundryHTML(st,i):''))+'</td>';   // LAUNDRY_KIDMOVE: grab rows
     if(exotic){
       h+='<td colspan="8" style="text-align:center"><button onclick="rtCadToggle(\''+_ck+'\')" style="border:1.5px dashed var(--header);background:var(--bg);color:var(--text);border-radius:8px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔁 '+esc(cadLabel(cad))+' — tap to change</button></td>';
     } else {
@@ -30517,6 +31132,59 @@ function kcModeBodyHTML(k){
   return kcTodayHTML(k);
 }
 // KC_LISTS_END
+// KC_MASTERY_START — 📚 a kid's study cards from Kids' Corner (her ask 2026-10-15, DeWalt family, Taylor): "In her Kids'
+// Corner she wants to click to go to her study lessons and it will not allow her to … We do not need the top stuff — the
+// menus. Kids' Corner can still be at the top, like a 'go back to Kids' Corner' bar in her color, saying whatever kid, and
+// below that all her studies for her to work through in Mastery. That is the only thing they do independently without Mom."
+// The refusal: a school card's "📂 Open …'s study cards →" link (and Family time's 🧠 button) call retrSchedGo → showTab('mastery'),
+// and a Kids' Corner link (?kiosk=corner) is locked to the Corner, so the tap did nothing. Now, ON THE KIDS' CORNER TAB, for
+// the picked kid (kcKid), with Mom mode off, a study link opens that kid's 📚 Study view INSIDE the Corner (tab stays "kids"):
+// a sticky "← Kids' Corner · <Kid>" bar in her colour, then renderMastStudy for that kid alone — no app header or tabs
+// (body.kc-study), no kid switcher, no Drills/Sprint/Match/Scores/Admin, no Problem words / + / Editor in Chief, and no 🩺
+// check-ups (Mom runs those — their links keep the old path). Match is "not yet". Mom mode, Mom's pages, the General tablet's
+// My Day and every other link are untouched. This block writes nothing to Firebase; the sitting writes exactly what a
+// Mastery-tab sitting writes (mstSave): mastery/<kid>/<i> card fields, mastery/studyLog/<kid>/<sid>/<day>, mastery/printLog
+// (once a day), mastery/studyBack/<kid>/<sid> redo stamp (only after Mom's ↩ send-back); the paused sitting stays on the device.
+var kcStudyKid=null;   // set = the Corner is showing this kid’s 📚 Study (var, not let: showTab and renderAll read it from earlier in the file)
+function kcStudyOn(){
+  try{ return typeof tab!=="undefined"&&tab==="kids"&&!!kcStudyKid&&kcStudyKid===kcKid&&!momHere(); }catch(e){ return false; }
+}
+// Does a study link tapped right now open in the Corner? Only the Corner tab, only the picked kid's own, only with Mom mode off,
+// never a check-up.
+function kcStudyIntercept(kid,sid){
+  try{
+    if(typeof tab==="undefined"||tab!=="kids"||momHere()) return false;
+    _kcLoadKid(); if(!kcKid||kid!==kcKid) return false;
+    if(sid){ const s=(mstSessions(kid)||[]).find(function(x){ return x&&x.sid===sid; }); if(s&&s.kind==="checkup") return false; }
+    return true;
+  }catch(e){ return false; }
+}
+function kcStudyOpen(kid,sid){
+  if(!kcStudyIntercept(kid,sid)) return;
+  masteryKid=kid; mastLogMode=false; mastLogScores={}; mastLogDeck=null; mastScoreItemId=null;
+  mstKid=kid; mstSid=sid||null; mstState=null; mstFlipped=false; mstDone=null; mstStartTs=null; mstTyped=""; mstChecked=null; mstNavReset();   // a fresh landing, never another kid's sitting
+  kcStudyKid=kid;
+  renderAll(); try{ window.scrollTo(0,0); }catch(e){}
+}
+// ← Kids' Corner: a sitting in progress is kept on the device (what "Quit for now" does), so Start reads Resume next time.
+function kcStudyClose(){
+  try{ if(mstState) mstPersist(); }catch(e){}
+  mstState=null; mstFlipped=false; mstTyped=""; mstChecked=null; try{ mstNavReset(); }catch(e){}
+  kcStudyKid=null;
+  renderAll(); try{ window.scrollTo(0,0); }catch(e){}
+}
+function kcStudyHTML(k){
+  const col=KID_COLOR[k]||"#2B7A78", name=KID_NAME[k]||cap(k);
+  masteryKid=k;   // the study view reads masteryKid — always this kid while the Corner shows it
+  let h='<div style="font-family:\'DM Sans\',sans-serif">';
+  h+='<div class="kc-study-bar" style="position:sticky;top:0;z-index:97;background:'+col+';padding:10px 12px;box-shadow:0 2px 8px rgba(0,0,0,.12)">'
+    +'<button onclick="kcStudyClose()" style="width:100%;text-align:left;border:none;background:transparent;color:#fff;font-size:18px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;padding:6px 2px">\u2190 Kids\u2019 Corner \u00b7 '+esc(name)+'</button></div>';
+  let body='';
+  try{ body=renderMastStudy({noCheckup:true}); }catch(e){ body='<div style="padding:20px;color:var(--muted)">Couldn\u2019t load your study cards \u2014 try again</div>'; }
+  h+='<div style="padding:12px 12px 80px">'+body+'</div>';
+  return h+'</div>';
+}
+// KC_MASTERY_END
 // ⭐ What today is worth — her ask: "you completed this chore area, how many points they have,
 // and how many they will get if they finish". Lists pay fixed stars (steps + list bonus + day
 // bonus), so those are counted. School pays SPINS, not a number — so school shows progress
@@ -30697,6 +31365,7 @@ function _kcTint(hex,amt){
 }
 function renderKidsCorner(el){
   _kcLoadKid();
+  if(typeof kcStudyKid!=="undefined"&&kcStudyKid){ if(kcStudyOn()){ el.innerHTML=kcStudyHTML(kcKid); return; } kcStudyKid=null; }   // 🧒📚 KC_MASTERY
   let h='<div class="'+(kcLittle(kcKid)?'kc-little':'')+'" style="font-family:\'DM Sans\',sans-serif;padding-bottom:28px">';
   if(!kcKid){
     h+='<div style="background:linear-gradient(135deg,#2B7A78,#3AAFA9);color:#fff;padding:18px 14px 14px;position:relative;overflow:hidden">'
@@ -32123,6 +32792,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
       const laneIv=lane=>occ.filter(t=>_laneOf(t)===lane).map(t=>[toMin(t.time),toMin(t.time)+(t.dur||20),t]);
       const kidIv=who=>occ.filter(t=>t.who===who).map(t=>[toMin(t.time),toMin(t.time)+(t.dur||20),t]);
       occ.filter(t=>!checked[t.id]&&!_isNote(t)&&t.mom!=="required"&&!t.famBlock&&subjCount[t.who+"|"+taskSubject(t)]===1&&!_gbFx(t))   // 👨‍👩‍👧 family time is pinned at its block time — never floated kid by kid; 🕙 nor is a fixed-time class (GAPFX)
+        .filter(t=>!(typeof claimed!=="undefined"&&claimed&&claimed[t.id]))   // MOMPEND 2026-10-15: a card sent to Mom is finished (like a checked one) — never floated into a blank
         .sort((a,b)=>toMin(a.time)-toMin(b.time))
         .forEach(t=>{
           const d=t.dur||20, lane=_laneOf(t), cur=toMin(t.time);
@@ -32146,7 +32816,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
       // 🌙 SWEEPKEEP: not on today once school is over — the day is done, its Closing Notebook keeps its time.
       if(dn===today&&_todaySchoolOver) continue;
       const byKid={};
-      weekData.tasks.forEach(t=>{ if(t.day===dn&&!t.id.endsWith("_c")&&!checked[t.id]) (byKid[t.who]=byKid[t.who]||[]).push(t); });
+      weekData.tasks.forEach(t=>{ if(t.day===dn&&!t.id.endsWith("_c")&&!checked[t.id]&&!(typeof claimed!=="undefined"&&claimed&&claimed[t.id])) (byKid[t.who]=byKid[t.who]||[]).push(t); });   // MOMPEND: a card with Mom is not open work the wrap-up waits behind
       Object.keys(byKid).forEach(function(who){
         const mine=byKid[who], closes=mine.filter(_isClose), others=mine.filter(t=>!_isClose(t));
         if(!closes.length||!others.length) return;
@@ -34200,7 +34870,8 @@ function wbGoAns(d){
 }
 function wbClose(){
   clearTimeout(_wbAutoT); _wbAutoT=null;   // 💾 the close saves it now
-  const go=()=>{ try{ if(_wbRO) _wbRO.disconnect(); }catch(e){} _wbRO=null; const ov=document.getElementById("wb-view"); if(ov) ov.remove(); wbView=null; };
+  const backKid=(wbView&&wbView.eic&&wbView.eic.back)?wbView.kid:null;   // ↩ EIC_PANELBACK: opened from the Editor in Chief menu → ✕ returns to it (her ask 2026-10-15)
+  const go=()=>{ try{ if(_wbRO) _wbRO.disconnect(); }catch(e){} _wbRO=null; const ov=document.getElementById("wb-view"); if(ov) ov.remove(); wbView=null; if(backKid&&window.eicPanel){ try{ window.eicPanel(backKid); }catch(e){} } };
   if(wbView&&wbView.dirty){ wbSave().then(go).catch(go); } else go();
 }
 function wbBarRender(){
@@ -38643,6 +39314,8 @@ function cbCopyTo(toKid){
   const seq=(buildSubjectLessons(kid,sk)||[]).map(x=>x.lesson);
   if(src.lessonSeq&&src.lessonSeq.length) copy.lessonSeq=src.lessonSeq.slice();
   else if(seq.length) copy.lessonSeq=seq;
+  // EGGQUIZ: the new kid has finished none of it — every "+ Quiz" line becomes lesson, then quiz.
+  if(copy.lessonSeq&&typeof eqSplit==="function"&&eqIsEggs(kid,sk,src)) copy.lessonSeq=eqSplit(copy.lessonSeq,null,null,1).seq;
   if(copy.lessonSeq){ const _r=_lidAlign(null,null,copy.lessonSeq,1,null,true); copy.lessonIds=_r.ids; copy.nextLid=_r.nextLid; }   // fresh ids for the new kid's copy
   if(!currData.subjects[toKid]) currData.subjects[toKid]={};
   currData.subjects[toKid][sk]=copy;
@@ -41163,6 +41836,14 @@ function gvEndInfo(kid,sk){
 function gvEndLine(kid,sk){ const r=gvEndInfo(kid,sk); return r.text?'<span class="gv-end" style="color:'+r.color+'">'+esc(r.text)+'</span>':''; }
 // Earliest-ending column first; columns with no plan date keep their current order at the end.
 // A 🛤 lane column ends when its LAST book ends, so its key is the latest end among its members.
+// The lane HEADER's line follows the same rule (live 2026-10-15: Lincoln's Grammar lane read "ends
+// Dec 20" while Editor in Chief and the purple book still ran in it — the header read only the first
+// member that was up). Returns the member whose end is latest; `fallback` when none has a plan date.
+function gvLaneEndSk(kid,members,fallback){
+  let best=fallback, k="";
+  (members||[]).forEach(function(m){ const i=gvEndInfo(kid,m).iso; if(i&&i>k){ k=i; best=m; } });
+  return best;
+}
 function gvEndSortCols(kid,cols,lanes){
   const key=function(ck){ const _lc=(lanes||{})[ck]; const ms=_lc?(_lc.members||[]):[ck]; let k="";
     ms.forEach(function(m){ const i=gvEndInfo(kid,m).iso; if(i&&i>k) k=i; }); return k; };
@@ -41284,7 +41965,7 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
   const wantBy={}; want.forEach(t=>{ wantBy[t.id]=t; });
   const liveBy={}; live.forEach(t=>{ liveBy[t.id]=t; });
   const orig0={}; live.forEach(t=>{ orig0[t.id]={day:t.day,time:t.time}; });   // where each card started (objects are edited in place)
-  const upd={}; const summary={added:[],moved:[],removed:[],retitled:[],kept:[]};
+  const upd={}; const summary={added:[],moved:[],removed:[],retitled:[],kept:[],unboxed:[]};
   const after=(liveTasks||[]).slice();
   const freed={};   // day → [time] slots this subject just vacated (removed / moved away) — the next lesson takes the finished one's slot
   // Firebase multi-path forbids a path that is a prefix of another: drop any `<id>/field`
@@ -41320,6 +42001,15 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
     if(opts.lsdSubj&&!opts.checked[t.id]&&typeof lessonDayFlags==="function"){ const _lf=lessonDayFlags(opts.lsdSubj,t.title);
       if(_lf){ if((t.mom||"none")!==_lf.mom){ upd[t.id+"/mom"]=_lf.mom; t.mom=_lf.mom; } if((+t.dur||0)!==_lf.dur){ upd[t.id+"/dur"]=_lf.dur; t.dur=_lf.dur; }
         if((upd[t.id+"/mom"]!==undefined||upd[t.id+"/dur"]!==undefined)&&summary.retitled.indexOf(t.id)<0) summary.retitled.push(t.id); } }
+    // RPUNBOX_START — a card the pattern wants this week IS a sitting: it leaves the end-of-week carries box (her report
+    // 2026-10-15, Lincoln's Social Studies: lesson 6 sat in the box, lesson 5 was walked back mid-week — the walk-back's
+    // re-lay moved 6 to Friday but left `_eowOverflow` on it, so 6 still showed in the box and the school-end guard, which
+    // skips boxed cards, found no next sitting to roll 5 into when Mom's Thursday was full: 5 was deferred off the week
+    // while 6 "stayed in this one"). Unlocked cards only (checked / claimed / started never change); one targeted
+    // <id>/_eowOverflow: null write, counted so the save happens even when nothing else moved. A card the cascade boxed
+    // on the very day the plan wants is covered too (the box keeps a card's day).
+    if(t._eowOverflow&&!locked(t)){ delete t._eowOverflow; upd[t.id+"/_eowOverflow"]=null; summary.unboxed.push(t.id); }
+    // RPUNBOX_END
     if(w.day&&w.day!==t.day){ if(locked(t)) return; if(dayIx(w.day)>=0&&tIx>=0&&dayIx(w.day)<tIx) return; // never move into the past
       (freed[t.day]=freed[t.day]||[]).push(t.time); t.day=w.day; t.time=null; summary.moved.push(t.id); }
   });
@@ -41732,7 +42422,7 @@ function reprojectSubjectWeek(kid,sk,why,opts){
       try{ if(typeof seGuardWeek==="function"){ const _se=seGuardWeek(r.tasksAfter,seGuardCtx({kids:[kid],checked:checked||{}}));
         _rpMergeUpd(r.upd,_se.upd);   // RPMERGE: never a path beside its own child (Firebase rejects the whole save)
         r.summary.shifted=(r.summary.shifted||[]).concat(_se.retimed,_se.rolled,_se.dropped||[]); r.summary.removed=r.summary.removed.concat(_se.deferred); } }catch(eSE){ dbg&&dbg("school-end skip: "+eSE); }
-      const n=r.summary.added.length+r.summary.moved.length+r.summary.removed.length+r.summary.retitled.length+((r.summary.closing||[]).length)+((r.summary.shifted||[]).length);
+      const n=r.summary.added.length+r.summary.moved.length+r.summary.removed.length+r.summary.retitled.length+((r.summary.closing||[]).length)+((r.summary.shifted||[]).length)+((r.summary.unboxed||[]).length);   // RPUNBOX: a card leaving the carries box is a write
       out=r.summary;
       if(!n) return;
       // E + F (2026-10-04 👻): read what the server really holds, drop field writes for cards that aren't there,
@@ -42821,7 +43511,7 @@ function renderCurrGrid(el){
         _q+='<span class="gv-lnq" onclick="'+_open(x)+'" title="'+esc(((subs[x]||{}).display||x)+" — waiting its turn; tap to open its card")+'">▸ '+_nm(x)+'</span>';
       });
       if(!_st.up.length&&!_q) _q='<span class="gv-lnq" style="cursor:default">all done</span>';
-      h+='<th title="'+esc(_tip)+'" style="cursor:default">'+_act+_oc+(typeof gvEndLine==="function"?gvEndLine(gvKid,_upSk):'')+_q+'</th>';
+      h+='<th title="'+esc(_tip)+'" style="cursor:default">'+_act+_oc+(typeof gvEndLine==="function"?gvEndLine(gvKid,(typeof gvLaneEndSk==="function"?gvLaneEndSk(gvKid,_lc.members,_upSk):_upSk)):'')+_q+'</th>';
       continue;
     }
     const sk=ck;
@@ -51799,10 +52489,11 @@ function mstCheckTypeAns(){
   _mastRe();
 }
 // MST_TYPEANS_END
-function renderMastStudy(){
+function renderMastStudy(opts){
   const kid=masteryKid;
   if(mstKid!==kid){ mstKid=kid; mstSid=null; mstState=null; mstFlipped=false; mstDone=null; mstStartTs=null; mstTyped=""; mstChecked=null; mstNavReset(); }  // a sitting never leaks across kids (MST_NAV: nor its Back/Forward)
   let sessions=[]; try{ sessions=mstSessions(kid)||[]; }catch(e){ sessions=[]; }
+  if(opts&&opts.noCheckup) sessions=sessions.filter(s=>s&&s.kind!=="checkup");   // 🧒📚 KC_MASTERY: a check-up is run by Mom, never from the Corner
   if(!sessions.length) return '<div style="text-align:center;padding:60px 20px;color:var(--muted);font-family:\'DM Sans\',sans-serif"><div style="font-size:40px;margin-bottom:10px">\u{1F4DA}</div><div style="font-size:16px;font-weight:700">No study sessions yet.</div></div>';
   if(mstSid==null||!sessions.some(s=>s.sid===mstSid)) mstSid=sessions[0].sid;
   const session=sessions.find(s=>s.sid===mstSid)||sessions[0];
@@ -59229,8 +59920,9 @@ function rtCadCycle(slot,kid,i,w){ rtCfgEnsure(slot,kid); const it=routineCfg2[s
 function rtCadCycleStart(slot,kid,i,v){ rtCfgEnsure(slot,kid); const it=routineCfg2[slot][kid][i]; if(!it||!v)return; it.cycStart=v; rtCfgSave(); renderAll(); }
 function rtCadClearWindow(slot,kid,i){ rtCfgEnsure(slot,kid); const it=routineCfg2[slot][kid][i]; if(!it)return; it.from=""; it.to=""; rtCfgSave(); renderAll(); }
 // ── Accountability: audit log of check-offs + false-check-off penalty ──
-function rlogAppend(kid,slot,label,act,pts){
+function rlogAppend(kid,slot,label,act,pts,extra){
   const wk=activeWk(), rec={label:label||"",slot:slot,act:act,ts:nowTs(),at:Date.now(),pts:pts||0};
+  if(extra) Object.keys(extra).forEach(function(k){ rec[k]=extra[k]; });   // ↶ CHOREUNDO: {undo:"mom"}
   let key="rl_"+Date.now()+"_"+Math.floor(Math.random()*1e6);
   if(db){ try{ const r=db.ref("routineLog/"+kid+"/"+wk+"/"+day).push(); key=r.key; obSet("routineLog/"+kid+"/"+wk+"/"+day+"/"+key,rec,null); }catch(e){} }
   routineLog[kid]=routineLog[kid]||{}; routineLog[kid][wk]=routineLog[kid][wk]||{}; routineLog[kid][wk][day]=routineLog[kid][wk][day]||{};
@@ -60030,6 +60722,7 @@ function retrAdminHtml(){
 // the sprint chip, a logged Match game checks Match. Tap a chip → Mastery tab, right
 // kid, right view. Today-only (derived state means nothing for other days).
 function retrSchedGo(kid,view,sid){
+  if(view==="study"&&typeof kcStudyIntercept==="function"&&kcStudyIntercept(kid,sid)){ kcStudyOpen(kid,sid); return; }   // 🧒📚 KC_MASTERY: from Kids' Corner, the kid's own study opens IN the Corner
   // Mirror mastSetKid's per-kid state resets so a jump from the schedule can't carry a
   // previous kid's log/slide/add-category state, then land on the requested view.
   masteryKid=kid; mastView=view||"drill";
@@ -60631,8 +61324,13 @@ function sprintDrillGridPillsHtml(color,poolLen){
 // kid runs their own level. A session = 4 timed 60-second runs. Each run is ONE sheet of the current sprint, in
 // the order A 1st → B 1st → A 2nd → B 2nd: met → the sprint is PASSED and the next run is the next sprint's
 // A 1st (a flying kid can pass 4 sprints in a session); not met → the same sprint's next sheet; four misses →
-// that sprint starts over at A 1st next time (repeat until met). Mom marks (Mom-required); the kid sees the
-// sheet and the timer. Sprint titles come from the library lists (library/scans/<book>, editable here: count +
+// that sprint starts over at A 1st next time (repeat until met). Whoever is on the sprint screen marks; the kid
+// sees the sheet and the timer.
+// MSMARK — marking needs no Mom mode (her rule 2026-10-15: "maybe to open the sprint but once open no mom mode
+// needed"). Live 2026-10-08 → 10-15: the Mom's Day gate (MOMGATE, 254eff8) turns Mom mode off when ▶ on the card
+// leaves Mom's Day for this screen, so at 0:00 the panel showed only "Mom marks met / not" and nothing was
+// recorded for a week (Lincoln's log stops Oct 7 while his cards were checked). Met / Not, ✎ Change and ↶ Undo
+// of the last run work with Mom off; the position (✎ Edit) and the book list stay Mom-only. Sprint titles come from the library lists (library/scans/<book>, editable here: count +
 // titles). Data: mathSprints/<kid> = {book, cur, moves[], log{<n>:{runs[], passed}}}. Targeted writes; dry-run inert.
 let mathSprints={}, lbScansMS={}, msTimer=null, msTimerLeft=0, msTimerDone=false, msEditBook=null, msPosEdit=false;
 const MS_BOOKS=[{id:"sm-sprints-1",label:"Sprints 1",base:100},{id:"sm-sprints-2",label:"Sprints 2",base:200},{id:"sm-sprints-3",label:"Sprints 3",base:300},
@@ -60653,7 +61351,39 @@ function msState(kid){ const st=(mathSprints||{})[kid]; return (st&&st.book)?st:
 function msRuns(kid,n){ const st=msState(kid); const e=st&&st.log&&st.log[n]; const r=e&&e.runs; return Array.isArray(r)?r.filter(Boolean):(r?Object.values(r).filter(Boolean):[]); }
 function msPassed(kid,n){ const st=msState(kid); const e=st&&st.log&&st.log[n]; return !!(e&&e.passed); }
 // the next sheet for sprint n: runs since the last pass, cycling A1→B1→A2→B2; null when the sprint is passed
-function msNextSheet(kid,n){ if(msPassed(kid,n)) return null; return MS_SHEETS[msRuns(kid,n).length%4]; }
+function msNextSheet(kid,n){ if(msPassed(kid,n)) return null; return MS_SHEETS[msSheetIdx(kid,n)]; }
+// MSSTART_START — ✎ Start here (her ask 2026-10-15: "an adjust button to adjust each time, so I can say no, I'm starting
+// here, I'm starting on this"). On any run, Mom on or off (same rule as marking, MSMARK), pick the sprint + the sheet
+// THIS run is: logged as a move (moves/<i>, why "start here", the sheet in `to`) and remembered on that sprint's log as
+// from = {sheet, at: runs so far}. The next run is that sheet; the ones after follow on (A2 → B2), and after B2 the
+// sprint wraps to A1 as it always has, so "four misses start over at A 1st" still holds. An undo back past the mark
+// drops the mark's effect (the plain cycle returns). Choosing a sprint already passed reopens it (passed cleared,
+// its old runs kept) so the run can happen. Targeted writes to mathSprints/<kid>; dry-run inert.
+let msStartOpen=false;
+function msSheetIdx(kid,n){
+  const st=msState(kid), f=st&&st.log&&st.log[n]&&st.log[n].from, len=msRuns(kid,n).length;
+  if(f&&f.sheet&&typeof f.at==="number"&&len>=f.at){ const si=Math.max(0,MS_SHEETS.findIndex(x=>x.k===f.sheet)); const k=len-f.at; return k<4-si?si+k:(k-(4-si))%4; }
+  return len%4;
+}
+function msStartToggle(){ if(msTimer||msTimerDone) return; msStartOpen=!msStartOpen; if(typeof _mastRe==="function") _mastRe(); }
+function msStartHere(kid,cur,sheetK,why){
+  if(!kid||msTimer||msTimerDone) return null; const st=msState(kid); if(!st) return null;
+  const L=msBookList(st.book); cur=parseInt(cur,10); if(!L.some(x=>x.n===cur)) return null;
+  const sheet=MS_SHEETS.find(x=>x.k===sheetK); if(!sheet) return null;
+  const from={book:st.book,cur:st.cur||null}; const u={};
+  st.cur=cur; u["cur"]=cur;
+  st.log=st.log||{}; st.log[cur]=st.log[cur]||{}; const mark={sheet:sheet.k,at:msRuns(kid,cur).length}; st.log[cur].from=mark; u["log/"+cur+"/from"]=mark;
+  if(st.log[cur].passed){ delete st.log[cur].passed; u["log/"+cur+"/passed"]=null; }
+  if(st.done){ delete st.done; u["done"]=null; }
+  st.moves=st.moves||[]; const mv={at:Date.now(),ts:nowTs(),from:from,to:{book:st.book,cur:cur,sheet:sheet.k},why:why||"start here"}; st.moves.push(mv); u["moves/"+(st.moves.length-1)]=mv;
+  if(db&&!_dryRun()) db.ref("mathSprints/"+kid).update(u);
+  dbg("🔢 sprint start here "+kid+" → #"+cur+" "+sheet.k);
+  msStartOpen=false; msTimerReset();
+  if(typeof _mastRe==="function") _mastRe();
+  return {cur:cur,sheet:sheet.k,move:mv};
+}
+function msStartFromForm(kid){ const c=document.getElementById("ms-sh-cur"), sh=document.getElementById("ms-sh-sheet"); if(!c||!sh) return; msStartHere(kid,c.value,sh.value,"start here"); }
+// MSSTART_END
 function msTodayRuns(kid){ const st=msState(kid); if(!st||!st.log) return 0; const d=msTodayISO(); let c=0; Object.keys(st.log).forEach(n=>{ msRuns(kid,n).forEach(r=>{ if(r&&r.d===d) c++; }); }); return c; }
 function msNextSprintN(kid,n){ const st=msState(kid); const L=msBookList(st.book); const i=L.findIndex(x=>x.n===n); return (i>=0&&i+1<L.length)?L[i+1].n:null; }
 function msSetPosition(kid,book,cur,why){
@@ -60669,7 +61399,7 @@ function msSetPosition(kid,book,cur,why){
 // one run: records the sheet + result; a met sheet passes the sprint and moves the kid on; the 4th run of the day
 // checks off today's Math Sprints card
 function msRecordRun(kid,met){
-  if(!momHere()) return null; if(typeof msMarkLocked==="function"&&msMarkLocked()) return null; /* ⏱ MSBUZZ: a tap at 0:00 can't mark */ const st=msState(kid); if(!st||!st.cur) return null;
+  if(typeof msMarkLocked==="function"&&msMarkLocked()) return null; /* ⏱ MSBUZZ: a tap at 0:00 can't mark */ const st=msState(kid); if(!st||!st.cur) return null;   // MSMARK: no Mom check (hub review 2026-10-15: this guard had been swallowed into the comment)
   const n=st.cur, sheet=msNextSheet(kid,n); if(!sheet) return null;
   const runs=msRuns(kid,n); const run={d:msTodayISO(),ts:nowTs(),at:Date.now(),sheet:sheet.k,met:!!met};
   st.log=st.log||{}; st.log[n]=st.log[n]||{}; const arr=runs.concat([run]); st.log[n].runs=arr;
@@ -60704,7 +61434,7 @@ function _msApplyResult(kid,n,met,ts,u){
   else { delete st.log[n].passed; u["log/"+n+"/passed"]=null; st.cur=n; u["cur"]=n; if(st.done){ delete st.done; u["done"]=null; } }
 }
 function msEditRun(kid,met){
-  if(!momHere()) return null; const L=msLastTodayRun(kid); if(!L) return null; met=!!met;
+  const L=msLastTodayRun(kid); if(!L) return null; met=!!met;   // MSMARK: no Mom check
   if(!!L.run.met===met) return {n:L.n,sheet:L.run.sheet,met:met,changed:false};
   const st=msState(kid); const r=Object.assign({},L.run,{met:met,editedTs:nowTs()});
   const runs=msRuns(kid,L.n).slice(); runs[L.i]=r; st.log[L.n].runs=runs;
@@ -60716,7 +61446,7 @@ function msEditRun(kid,met){
   return {n:L.n,sheet:r.sheet,met:met,changed:true,cur:st.cur};
 }
 function msUndoRun(kid){
-  if(!momHere()) return null; const L=msLastTodayRun(kid); if(!L) return null;
+  const L=msLastTodayRun(kid); if(!L) return null;   // MSMARK: no Mom check
   const st=msState(kid); const runs=msRuns(kid,L.n).slice(0,L.i); st.log[L.n].runs=runs;
   const u={}; u["log/"+L.n+"/runs/"+L.i]=null;
   if(L.run.met) _msApplyResult(kid,L.n,false,null,u);   // the run that passed it is gone → not passed, back on that sprint
@@ -60881,6 +61611,20 @@ function buildSprintBookHtml(color){
   h+='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:16px;margin-bottom:14px;text-align:center">';
   if(today>=4) h+='<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:8px 10px;font-size:14px;font-weight:800;color:#15803d;margin-bottom:6px">✅ Today\'s 4 are done — run more?</div><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#78716c">Extra run '+(today-3)+'</div>';   // ✅ MSEDIT
   else h+='<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#78716c">Run '+(today+1)+' of 4 today</div>';
+  if(!st.done&&!msTimer&&!msTimerDone){   // ✎ MSSTART: pick this run's sprint + sheet (any run, Mom on or off)
+    if(!msStartOpen) h+='<div style="margin-top:4px"><span onclick="msStartToggle()" style="cursor:pointer;font-size:11.5px;font-weight:700;color:#4f46e5;text-decoration:underline dotted">✎ Start here</span></div>';
+    else {
+      const nxt=msNextSheet(kid,st.cur), pickSheet=nxt?nxt.k:"a1";
+      h+='<div style="background:#eef2ff;border:1.5px solid #c7d2fe;border-radius:10px;padding:8px 10px;margin:8px auto;max-width:420px;text-align:left">';
+      h+='<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#3730a3;margin-bottom:6px">✎ Start here — this run is</div>';
+      h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">';
+      h+='<select id="ms-sh-cur" style="padding:7px 9px;border:1.5px solid #c7d2fe;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif;max-width:240px">'+L.map(x=>'<option value="'+x.n+'"'+(x.n===st.cur?' selected':'')+'>'+x.n+(x.title?' · '+esc_(x.title.slice(0,32)):'')+(msPassed(kid,x.n)?' ✓':'')+'</option>').join("")+'</select>';
+      h+='<select id="ms-sh-sheet" style="padding:7px 9px;border:1.5px solid #c7d2fe;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'+MS_SHEETS.map(x=>'<option value="'+x.k+'"'+(x.k===pickSheet?' selected':'')+'>'+esc_(x.l)+'</option>').join("")+'</select>';
+      h+='<button onclick="msStartFromForm(\''+kid+'\')" style="padding:8px 14px;border-radius:9px;border:none;background:'+color+';color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Start</button>';
+      h+='<button onclick="msStartToggle()" style="padding:7px 11px;border-radius:9px;border:none;background:#f3f4f6;color:#374151;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Cancel</button>';
+      h+='</div><div style="font-size:10.5px;color:#57534e;margin-top:5px">A sprint with ✓ was passed already — picking it opens it again. Logged as a move.</div></div>';
+    }
+  }
   h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800;color:'+color+';margin:6px 0 2px">Sprint '+st.cur+'</div>';
   if(cur&&cur.title) h+='<div style="font-size:14px;font-weight:600;color:#1c1917;margin-bottom:8px">'+esc_(cur.title)+'</div>';
   if(st.done) h+='<div style="font-size:13px;color:#16a34a;font-weight:700">🏁 Book finished — pick the next book above.</div>';
@@ -60892,11 +61636,10 @@ function buildSprintBookHtml(color){
     h+='<div style="height:8px;border-radius:4px;background:#eee;overflow:hidden;margin:8px auto 12px;max-width:320px"><div id="ms-timer-bar" style="height:100%;width:'+(msTimer||msTimerDone?Math.round(100*(60-(msTimerDone?0:msLeftSec()))/60):0)+'%;background:'+color+';transition:width 1s linear"></div></div>';
     h+='<button id="ms-start" onclick="msTimerStart()"'+(msTimer||msTimerDone?' disabled':'')+' style="'+(msTimerDone?'display:none;':'')+'padding:14px 28px;border-radius:14px;border:none;background:'+color+';color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(msTimer?"⏱ Running…":"▶ Start 60 seconds")+'</button>';
     h+='<div id="ms-mark" style="display:'+(msTimerDone?'flex':'none')+';gap:10px;justify-content:center;margin-top:6px">'+
-      (mom?'<button onclick="msRecordRun(\''+kid+'\',true)" style="flex:1;max-width:180px;padding:14px;border-radius:14px;border:none;background:#16a34a;color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Met ✓</button><button onclick="msRecordRun(\''+kid+'\',false)" style="flex:1;max-width:180px;padding:14px;border-radius:14px;border:2px solid #ef4444;background:#fff;color:#ef4444;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Not ✗</button>':'<span style="font-size:12px;color:#78716c">Mom marks met / not</span>')+'</div>';
-    if(!mom) h+='<div style="font-size:11px;color:#78716c;margin-top:8px">Mom marks met / not after the timer.</div>';
+      ('<button onclick="msRecordRun(\''+kid+'\',true)" style="flex:1;max-width:180px;padding:14px;border-radius:14px;border:none;background:#16a34a;color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Met ✓</button><button onclick="msRecordRun(\''+kid+'\',false)" style="flex:1;max-width:180px;padding:14px;border-radius:14px;border:2px solid #ef4444;background:#fff;color:#ef4444;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Not ✗</button>')+'</div>';   // MSMARK: Met / Not for whoever is here
   }
   if(runs.length) h+='<div style="font-size:11.5px;color:#78716c;margin-top:12px">This sprint: '+runs.map(r=>'<span style="color:'+(r.met?"#16a34a":"#b91c1c")+';font-weight:700">'+esc_(r.sheet.toUpperCase())+(r.met?" ✓":" ✗")+'</span>').join(" · ")+(msPassed(kid,st.cur)?' — PASSED':'')+'</div>';
-  const lastR=mom?msLastTodayRun(kid):null;   // ✎ MSEDIT: fix the latest tap
+  const lastR=msLastTodayRun(kid);   // ✎ MSEDIT: fix the latest tap — MSMARK: Mom off too
   if(lastR){ const r=lastR.run;
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;justify-content:center;margin-top:10px;padding-top:10px;border-top:1px dashed #e2ddd6;font-size:12px;color:#57534e">Last run: Sprint '+lastR.n+' · '+esc_(String(r.sheet||"").toUpperCase())+' <b style="color:'+(r.met?"#16a34a":"#b91c1c")+'">'+(r.met?"Met ✓":"Not ✗")+'</b>'+
       '<button onclick="msEditRun(\''+kid+'\','+(!r.met)+')" style="padding:5px 10px;border-radius:8px;border:1.5px solid #e2ddd6;background:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✎ Change to '+(r.met?"Not ✗":"Met ✓")+'</button>'+
