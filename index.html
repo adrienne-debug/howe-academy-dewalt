@@ -1783,6 +1783,9 @@ const ROSTER       = ROSTER_DEF.map(k=>k.id);                         // all kid
 const HA_IS_HOWE   = !(window.HA_FAMILY&&window.HA_FAMILY.familyId&&window.HA_FAMILY.familyId!=="howe");   // code defaults that are Howe's OWN content show only here
 const FIRST_KID    = ROSTER[0];   // default "selected kid" everywhere a page opens on one kid — was hardcoded "lincoln", which leaked Howe into other families' apps (2026-10-01)
 const SCHOOL_KIDS  = ROSTER_DEF.filter(k=>k.schoolAge).map(k=>k.id);  // excludes Pre-K
+// PREKFLAG (audit 2026-10-24, her "go"): a Pre-K kid is one on the roster who isn't school-age — the family's own flag. Four Pre-K
+// exemptions were written as kid==="julian", so Burris's Pre-K kid (3D, schoolAge:false) got none of them. Howe: still exactly Julian.
+function isPreK(kid){ return !!kid&&ROSTER.indexOf(kid)>=0&&SCHOOL_KIDS.indexOf(kid)<0; }
 const KID_NAME     = Object.fromEntries(ROSTER_DEF.map(k=>[k.id,k.name]));   // {lincoln:"Lincoln",...}
 const KID_COLOR    = Object.fromEntries(ROSTER_DEF.map(k=>[k.id,k.color]));  // {lincoln:"#1e3a5f",...}
 // Kid identity CSS (kid-button active bg + name badge) injected from ROSTER_DEF — keeps colors single-sourced
@@ -4563,7 +4566,7 @@ function gateClockHeld(viewDay){
 // Returns true if the schedule should be shown (unlocked) for the given kid filter and day
 function isScheduleUnlocked(kidFilter, viewDay){
   // Julian has no school tasks — never locked
-  if(kidFilter === "julian") return true;
+  if(isPreK(kidFilter)) return true;   // PREKFLAG
   // Mom mode bypass — unlocks all kids
   if(momModeActive) return true;
   // Mom PIN bypass (legacy)
@@ -6390,7 +6393,7 @@ function chSettingsMorningRuleHTML(){
     });
     h+='</div>';
     [...ROSTER].forEach(function(kid){
-      if(kid==="julian") return;
+      if(isPreK(kid)) return;   // PREKFLAG
       var lost=techLost(kid,day), graced=techGraced(kid,day), mdone=morningComplete(kid,day);
       var status=mdone?'✓ Morning done':(lost?'🚫 No tech today':(graced?'🙏 Grace granted':'⏳ Not yet due'));
       var scol=mdone?'#16a34a':(lost?'#b91c1c':'#6b7280');
@@ -7030,6 +7033,12 @@ function wsAns(w,i){ return ((w&&w.answers)||{})[i]||{}; }
 // q.multi:true → checkboxes; the answer is still ONE string ("Taylor, Makenzie", in option order) so the families
 // dashboard and every reader of answers/<i>/pick keep working unchanged. Unchecking the last box clears the answer.
 function wsMultiList(pick){ return String(pick||"").split(", ").filter(Boolean); }
+// WSMULTIWORDS (her report via Sara 2026-10-24, units worksheet Q3–5: "it won't let me pick others"): the question SAID "pick all
+// that apply" / "rank your top two" but was sent without multi:true, so it drew radio buttons. A question whose own words ask for
+// several picks is treated as multi too — the stored answer is the same one string, so nothing that reads answers changes.
+// multi:false on a question still forces a single pick.
+function wsIsMulti(q){ if(!q) return false; if(q.multi===true) return true; if(q.multi===false) return false;
+  return Array.isArray(q.options)&&q.options.length>1&&/\b(all that apply|pick all|check all|choose all|select all|any that apply|top (two|2|three|3)|more than one)\b/i.test(String(q.q||"")); }
 function wsMultiToggle(opts,pick,o){ const cur=wsMultiList(pick), has=cur.indexOf(o)>=0;
   return opts.filter(x=>has?(x!==o&&cur.indexOf(x)>=0):(x===o||cur.indexOf(x)>=0)).join(", "); }
 function wsSentList(){
@@ -7127,12 +7136,12 @@ function wsRender(id){
   qs.forEach((q,i)=>{
     const a=wsAns(w,i), opts=Array.isArray(q.options)?q.options:[];
     h+='<div style="border:1px solid #e2e8f0;border-radius:12px;padding:11px 12px;margin-bottom:10px;background:'+(a.pick?'#f0fdf4':'#fff')+'">'+
-      '<div style="font-size:13.5px;font-weight:700;color:#0f172a;line-height:1.4;margin-bottom:'+(q.hint?'2':'8')+'px">'+(i+1)+'. '+esc(q.q)+(q.multi?' <span style="font-weight:600;color:#64748b;font-size:12px">(check all that apply)</span>':'')+'</div>'+
+      '<div style="font-size:13.5px;font-weight:700;color:#0f172a;line-height:1.4;margin-bottom:'+(q.hint?'2':'8')+'px">'+(i+1)+'. '+esc(q.q)+(wsIsMulti(q)?' <span style="font-weight:600;color:#64748b;font-size:12px">(check all that apply)</span>':'')+'</div>'+
       (q.hint?'<div style="font-size:12px;color:#64748b;line-height:1.4;margin-bottom:8px">'+esc(q.hint)+'</div>':'');
     opts.forEach((o,k)=>{
-      const on=q.multi?wsMultiList(a.pick).indexOf(o)>=0:a.pick===o;
+      const on=wsIsMulti(q)?wsMultiList(a.pick).indexOf(o)>=0:a.pick===o;
       h+='<div onclick="wsPick(\''+esc(id)+'\','+i+','+k+')" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:7px 9px;margin-bottom:5px;border-radius:9px;border:1.5px solid '+(on?'#16a34a':'#e2e8f0')+';background:'+(on?'#dcfce7':'#f8fafc')+'">'+
-        '<span style="width:16px;height:16px;border-radius:'+(q.multi?'4px':'50%')+';border:2px solid '+(on?'#16a34a':'#94a3b8')+';background:'+(on?'#16a34a':'#fff')+';flex:none"></span>'+
+        '<span style="width:16px;height:16px;border-radius:'+(wsIsMulti(q)?'4px':'50%')+';border:2px solid '+(on?'#16a34a':'#94a3b8')+';background:'+(on?'#16a34a':'#fff')+';flex:none"></span>'+
         '<span style="font-size:13px;color:#0f172a">'+esc(o)+'</span></div>';
     });
     // onchange (not oninput): typing never re-renders, so the box keeps focus.
@@ -7153,7 +7162,7 @@ function wsPick(id,i,k){
   // keep whatever is typed in the notes boxes before re-rendering
   (w.questions||[]).forEach((q,j)=>{ const t=document.getElementById("ws-note-"+j); if(t&&t.value!==(wsAns(w,j).note||"")) wsSave(id,j,"note",t.value); });
   const qq=(w.questions||[])[i]||{};
-  wsSave(id,i,"pick",qq.multi?wsMultiToggle(o,wsAns(w,i).pick,o[k]):o[k]); wsRender(id);
+  wsSave(id,i,"pick",wsIsMulti(qq)?wsMultiToggle(o,wsAns(w,i).pick,o[k]):o[k]); wsRender(id);
 }
 function wsNote(id,i,val){ wsSave(id,i,"note",String(val||"")); }
 function wsSubmit(id){
@@ -8547,7 +8556,7 @@ function renderMomBoard(el){
     var col=SL_KCOL[kid]||"#666";
     var mSteps=morningStepsFor(kid), mT=mSteps.length, mD=0; for(var mi=0;mi<mT;mi++){ if(mStepDoneOn(kid,day,mi)) mD++; }
     var mDone=morningComplete(kid,day);
-    var tc=_boardTaskCounts(kid,day); var schedUnl=mDone||kid==="julian";
+    var tc=_boardTaskCounts(kid,day); var schedUnl=mDone||isPreK(kid);   /* PREKFLAG */
     var af=slotCounts("afternoon",kid), ch=slotCounts("chores",kid), ev=slotCounts("evening",kid);
     var shower=!!(findDue("afternoon",kid,/shower/i)||findDue("evening",kid,/shower/i));
     var pA=findDue("afternoon",kid,/pickup|pick up/i), pE=findDue("evening",kid,/pickup|pick up/i);
@@ -12360,7 +12369,10 @@ function hhJobs(){ return (householdData&&householdData.jobs)||{}; }
 const HH_AREAS={health:["🧼","Health"],animals:["🐾","Animals"],pickup:["🧹","Pickup"],cleaning:["🧽","Cleaning"]};
 const HH_FLOORS={down:"Down",up:"Up",ask:"Ask",both:"Both"};
 const HH_VERDICTS={keep:["✅","Keep","#15803d"],change:["✏️","Change","#b45309"],retire:["🚫","Retire","#64748b"]};
-const HH_WHO=["lincoln","ellis","lucy","julian","mom","dad","grab"];
+// HHROSTER (audit 2026-10-24, her "go"): the household "who" list is THIS family's kids in roster order, then Mom, Dad, Up for
+// Grabs — it was Howe's four by name, so Settings ▸ 🧽 Cleaning Day listed Lincoln/Ellis/Lucy/Julian in every family's app and a
+// family's own kids' household jobs would never show. For Howe the list comes out identical.
+const HH_WHO=((typeof ROSTER!=="undefined"&&Array.isArray(ROSTER)&&ROSTER.length)?ROSTER.slice():["lincoln","ellis","lucy","julian"]).concat(["mom","dad","grab"]);
 function hhWhoName(w){ return w==="mom"?"Mom":w==="dad"?"Dad":w==="grab"?"Up for Grabs":((typeof KID_NAME!=="undefined"&&KID_NAME[w])||cap(w)); }
 function hhSlug(l){ return String(l||"").toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,96)||"x"; }
 // Ids are "<source>_<slug of the label>"; two rows with the same label on the same list get _2, _3 … so nothing is lost.
@@ -12637,7 +12649,9 @@ function renderHousehold(el){
 const HH_BUDGET={lincoln:[30,60],ellis:[25,50],lucy:[15,30],julian:[8,15],mom:[20,20],dad:[15,120]};   // [school day, Sat/Sun] minutes
 const HH_MIN_DEFAULT={health:2,animals:3,pickup:5,cleaning:10};
 const HH_ROOMS=[["living","Living room","down"],["entry","Entry + hallway","down"],["bathdown","Downstairs bathroom","down"],["kitchen","Kitchen + dining","down"],["school","School room","down"],
-  ["boys","Boys' room","up"],["lj","Lucy + Julian's room","up"],["playroom","Playroom","up"],["ours","Mom and Dad's room + bathroom","up"],["bathup","Top-of-stairs bathroom","up"],["stairs","Stairs + upstairs hallway","up"],["any","Not a room","-"]];
+  ["boys","Boys' room","up"],["lj","Lucy + Julian's room","up"],["playroom","Playroom","up"],["ours","Mom and Dad's room + bathroom","up"],["bathup","Top-of-stairs bathroom","up"],["stairs","Stairs + upstairs hallway","up"],["any","Not a room","-"]]
+  .map(function(r){ if(typeof HA_IS_HOWE==="undefined"||HA_IS_HOWE) return r;   // HHROSTER: Howe's own house names stay Howe's; another family sees plain room names (same ids, so nothing saved moves)
+    const L={boys:"Kids' room",lj:"Second kids' room",ours:"Parents' room + bathroom",bathup:"Upstairs bathroom",school:"School room"}; return L[r[0]]?[r[0],L[r[0]],r[2]]:r; });
 const HH_LAYERS=[["main","One main chore a day"],["weekly","Weekly jobs"],["monthly","Every few weeks"],["laundry","Laundry"],["project","Projects"],["grab","Up for Grabs"],["daily","Daily"]];
 let hhGridSel="";                // Week: "who|iso" of the open cell
 let hhOpenArea="", hhOpenRoom=""; // Area / Room: which card is expanded
@@ -12955,7 +12969,7 @@ function hhLevelReadyNowHTML(){
 // id so their ✎ edits still find it). Under Take over the lists re-derive on the spot. The row keeps its place at the END of
 // the new person's list, so nobody else's check-off index moves; leaving a list shifts the steps after it, as ✕ always has.
 let hhAddOpen=false, hhGive="";                                                    // the add form is showing · "<id>" of the open Give to… row
-let hhAdd={emoji:"",label:"",pts:"",who:"lincoln",slot:"chores",cad:"daily",room:"any",level:0,area:"",can:{},kind:"chore"};   // kind: chore | once | project (HH_PROJECTS)   // can = who else may do it (HH_SETTINGS_METER)   // the form's picks; level 0 = the person's current level; area "" = guess from the words
+let hhAdd={emoji:"",label:"",pts:"",who:((typeof FIRST_KID!=="undefined"&&FIRST_KID)||(typeof ROSTER!=="undefined"&&Array.isArray(ROSTER)&&ROSTER[0])||"mom"),slot:"chores",cad:"daily",room:"any",level:0,area:"",can:{},kind:"chore"};   // kind: chore | once | project (HH_PROJECTS)   // can = who else may do it (HH_SETTINGS_METER)   // the form's picks; level 0 = the person's current level; area "" = guess from the words
 // HH_ADD_FORM (her 2026-10-11: "emoji picking isnt there tho … the things that decide if it needs to wait for the gate"): a row
 // of house emoji to tap, and an Area picker — the area is what decides the gate (Pickup / Cleaning wait for the level,
 // Health / Animals always go out), so she picks it instead of trusting the guess from the words.
@@ -13437,7 +13451,7 @@ function hhProjectsHTML(){
   const ids=Object.keys(jobs).filter(function(id){ return hhIsProject(jobs[id]); });   // HH_ONCEPILE: once-jobs have their own tab
   let h='<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Projects are the bigger things with a room and a target; a once-job is due until it is checked one time. '+(mom?'Add either with + Add a chore and the Kind row.':'')+'</div>';
   if(!ids.length) return h+'<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);padding:10px 12px;font-size:12px;color:var(--muted)">No projects or once-jobs yet.</div>';
-  const order=["mom","dad","lincoln","ellis","lucy","julian","grab"];
+  const order=["mom","dad"].concat(HH_WHO.filter(w=>w!=="mom"&&w!=="dad"&&w!=="grab"),["grab"]);   // HHROSTER: the family's own kids
   const sorted=ids.sort(function(a,b){ const A=jobs[a],B=jobs[b]; return (A.status==="retired")-(B.status==="retired")||(order.indexOf(A.who)-order.indexOf(B.who))||((A.target||"9999")<(B.target||"9999")?-1:1); });
   sorted.forEach(function(id){ const j=jobs[id], proj=hhIsProject(j), S=hhProjStatus(j), W=hhProjWork(j), steps=hhProjSteps(j), nd=steps.filter(function(x){ return x.done; }).length, next=steps.find(function(x){ return !x.done; }), open=hhProjOpen===id, done=j.status==="retired";
     const col=S.k==="done"?'#94a3b8':S.k==="going"?'#2B7A78':'#b45309';
@@ -46436,6 +46450,34 @@ function renderCurrBuilder(el){
   const _dp=document.getElementById("cb-daypin-scroll"); if(_dp) _dp.scrollTop=cbDayPinScroll;
 }
 
+// CBTODAYNOTE_START — 🔁 the Build preview says when TODAY's open card is about to move (her pick 2026-10-24, after Makenzie's AAS 4
+// rebuild on Fri 10/23 moved the unchecked "Lesson 6 · day 2 of 5" to Monday and slid every later lesson a day). A plan-backed
+// build lays everything unfinished from the next open day, so an unchecked card today is re-laid ahead while today's dealt card
+// stays on the schedule — if it gets done today, the moved copy repeats it. Display only: nothing is written.
+// Returns {text, to} when today's row holds this subject's lesson, today's card for it isn't checked/claimed, and the preview
+// puts that same lesson on a later date; else null.
+function cbTodayMoveNote(kid,sk,res){
+  try{
+    if(!res||res.error||!Array.isArray(res.assignments)) return null;
+    const today=cbTodayISO(), rows=(((typeof currData!=="undefined"&&currData)||{}).lessons||{})[kid]||{};
+    const filled=v=>!!(v&&v!=="—"&&v!=="nan"&&String(v).trim());
+    let T=""; Object.keys(rows).forEach(dn=>{ const r=rows[dn]; if(r&&r.date===today&&filled(r[sk])) T=String(r[sk]).trim(); });
+    if(!T) return null;
+    const tasks=((typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[]).filter(t=>t&&t.who===kid&&t.subjectKey===sk&&typeof _todayDay==="string"&&effectiveDay(t)===_todayDay&&!String(t.id||"").endsWith("_c"));
+    if(tasks.some(t=>(typeof checked!=="undefined"&&checked&&checked[t.id])||(typeof claimed!=="undefined"&&claimed&&claimed[t.id]))) return null;   // done today → the build just moves on
+    const a=res.assignments.filter(x=>x&&x.date>today&&String(x.text||"").trim()===T).sort((x,y)=>x.date<y.date?-1:1)[0];
+    return a?{text:T,to:a.date}:null;
+  }catch(e){ return null; }
+}
+function cbTodayMoveHTML(kid,sk,res){
+  const n=cbTodayMoveNote(kid,sk,res); if(!n) return "";
+  const s=(((currData||{}).subjects||{})[kid]||{})[sk]||{}, nm=s.display||sk;
+  const d=gwParseDate(n.to), when=d.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
+  return '<div style="font-size:11.5px;color:#7c2d12;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:7px 9px;margin-bottom:6px;line-height:1.45">'
+    +'🔁 <b>Today\u2019s '+esc(nm)+' card isn\u2019t checked off yet</b> ('+esc(n.text)+'). This build puts that lesson on <b>'+esc(when)+'</b> and moves every later lesson along with it. '
+    +'If it gets done today, check it off first, then build \u2014 otherwise '+esc(when.split(",")[0])+' repeats it.</div>';
+}
+// CBTODAYNOTE_END
 function cbRenderForm(col,embedded){
   const kid=cbKid, sk=cbSubjKey, f=cbForm;
   const s=currData.subjects[kid][sk];
@@ -46602,6 +46644,7 @@ function cbRenderForm(col,embedded){
       if(r.stats.newRows) h+='<div style="font-size:11px;color:var(--muted);margin-bottom:4px">➕ Extends the map by '+r.stats.newRows+' new day'+(r.stats.newRows!==1?'s':'')+' past its current end.</div>';
       if(r.clears.length) h+='<div style="font-size:11px;color:var(--muted);margin-bottom:4px">♻ '+r.clears.length+' old future placement'+(r.clears.length!==1?'s':'')+' of this subject will be replaced. Past days are untouched.</div>';
       r.warnings.forEach(w=>{ h+='<div style="font-size:11px;color:#92400e;background:#fffbeb;border-radius:6px;padding:5px 8px;margin-bottom:4px">⚠ '+esc(w)+'</div>'; });
+      if(typeof cbTodayMoveHTML==="function") h+=cbTodayMoveHTML(cbKid,cbSubjKey,r);   // 🔁 CBTODAYNOTE: today's open card is about to move
       // Sample: first 3 weeks + last
       const byWk={}; const order=[];
       r.assignments.forEach(a=>{ if(!byWk[a.week]){byWk[a.week]=[];order.push(a.week);} byWk[a.week].push(a); });
@@ -65287,7 +65330,10 @@ function _mlQueueLayCore(tasks){
       const _grp={};
       tasks.forEach(function(t){ if(t&&t.famAuto&&t.famBlock&&isToday(t)&&t.time&&!_mlFinished(t.id,t)){ const g=t.famBlock+"|"+(t.famItem||""); (_grp[g]=_grp[g]||[]).push(t); } });
       Object.keys(_grp).forEach(function(g){
-        const own=toMin(_grp[g][0].time); if(own==null||isNaN(own)) return;
+        // 🔗 FAMSPLIT (DeWalt 2026-10-23: Andrew's copy 4:15, Kenzie's 5:35 PM on screen): the floor is the EARLIEST copy's slot,
+        // not whichever copy happens to come first in the list, and every copy is re-stamped unless ALL already sit at the answer.
+        let own=null; _grp[g].forEach(function(t){ const m=toMin(t.time); if(m!=null&&!isNaN(m)&&(own===null||m<own)) own=m; });
+        if(own===null) return;
         let tgt=null, W=_lw?[_lw]:[], allHand=true;   // started only when EVERY member is on it
         _grp[g].forEach(function(t){
           const k=t.who, ih=_mlInHand(k); let pos;
@@ -65299,7 +65345,7 @@ function _mlQueueLayCore(tasks){
         if(tgt===null) return;
         let s=tgt; if(allHand) s=_mlHandStep(s,_grp[g][0].dur||20,W,_lw?[_lw]:[]); else {   // LUNCHGRACE
          const d=_grp[g][0].dur||20; let mv=true,gd=0; while(mv&&gd++<60){ mv=false; W.forEach(function(iv){ if(s<iv[1]&&s+d>iv[0]){ s=iv[1]; mv=true; } }); } }
-        if(s===own) return;
+        if(_grp[g].every(function(t){ return toMin(t.time)===s; })) return;   // FAMSPLIT
         _grp[g].forEach(function(t){ _famLay[t.id]=s; });
       });
     }catch(e){}
@@ -67843,7 +67889,7 @@ function techLost(kid,d){
   // so turning the feature on doesn't quietly change behaviour for anyone.
   if((d==="saturday"||d==="sunday") && routineRules.applyWeekends===false) return false;
   if(breakPause() && routineRules.applyBreaks===false) return false;
-  if(kid==="julian") return false;                     // Pre-K exempt
+  if(isPreK(kid)) return false;                        // Pre-K exempt (PREKFLAG: the family's own flag)
   if(techGraced(kid,d)) return false;
   if(morningComplete(kid,d)) return false;
   if(d===_todayDay) return new Date().getHours()>=loseTechHour();   // past the deadline today
