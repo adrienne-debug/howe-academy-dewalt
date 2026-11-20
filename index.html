@@ -12,7 +12,12 @@
 // One-shot guard (ha_h_tried): only ever redirect ONCE per tab session. If the page comes back and
 // the hash still doesn't match (e.g. a browser whose outerHTML serialization isn't byte-stable, which
 // otherwise reload-loops to a blank screen), we run the page as-is instead of reloading forever.
-(function(){if(location.hostname==='localhost'||location.hostname==='127.0.0.1')return;var s=document.documentElement.outerHTML;var h=0;for(var i=0;i<s.length;i++){h=((h<<5)-h)+s.charCodeAt(i);h|=0;}h=Math.abs(h).toString(36);var u=new URL(location.href);if(u.searchParams.get('_h')!==h){try{if(sessionStorage.getItem('ha_h_tried')){return;}sessionStorage.setItem('ha_h_tried','1');}catch(e){}u.searchParams.set('_h',h);location.replace(u.href);}})();
+// NOBOUNCE (2026-11-19, her "go" on step 2 of REPORT_phone_battery_2026-11-09.md): no bounce when a service worker is in
+// control. sw.js already fetches this page fresh from the server on every load, and the deploy reload is driven by
+// CODE_VERSION / settings/codeVersion, so the bounce only cost a second full page download and parse. It happened on EVERY
+// start of a home-screen app, because each cold start is a new tab session (the diary's "launch+bounce"). A first-ever
+// visit (no service worker yet) and a browser without one bounce exactly as before.
+(function(){if(location.hostname==='localhost'||location.hostname==='127.0.0.1')return;try{if(navigator.serviceWorker&&navigator.serviceWorker.controller)return;}catch(e){}var s=document.documentElement.outerHTML;var h=0;for(var i=0;i<s.length;i++){h=((h<<5)-h)+s.charCodeAt(i);h|=0;}h=Math.abs(h).toString(36);var u=new URL(location.href);if(u.searchParams.get('_h')!==h){try{if(sessionStorage.getItem('ha_h_tried')){return;}sessionStorage.setItem('ha_h_tried','1');}catch(e){}u.searchParams.set('_h',h);location.replace(u.href);}})();
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -4444,9 +4449,9 @@ function initFb() {
     db.ref("pointClaims").on("value",s=>{ pointClaims=s.val()||{}; pointClaimsLoaded=true; });
     db.ref("bank").on("value",s=>{ bank=s.val()||{}; });
     db.ref("readingLog").on("value",s=>{ readingLog=s.val()||{}; });
-    db.ref("esa").on("value",s=>{ esaData=s.val()||{}; try{ if(adminSubTab==="purchases"||(tab==="moms-plan"&&mpSubView==="purch")) renderAllSoon(); }catch(e){} });   // SCHOOLPAGES: + Mom's Day ▸ School ▸ Purchases
+    db.ref("esa").on("value",s=>{ esaData=s.val()||{}; try{ if(adminSubTab==="purchases"||(tab==="moms-plan"&&(mpSubView==="esa"||mpSubView==="budget"))) renderAllSoon(); }catch(e){} });   // SCHOOLPAGES · BUDGETTAB: Mom's Day ▸ 💰 Budget ▸ ESA & purchases / Overview (was School ▸ Purchases)
     db.ref("plans").on("value",s=>{ roadmapData=s.val()||{}; try{ if(tab==="moms-plan"||adminSubTab==="curriculum") renderAllSoon(); }catch(e){} });
-    db.ref("digest").on("value",s=>{ digestData=s.val()||{}; });
+    // 📋 digest/ loads when the weekly report opens (DIGESTLAZY, 2026-11-19), not at every start
     db.ref("scheduleOverrides").on("value",s=>{
       scheduleOverrides=s.val()||{};
       _soBase=_soSnap(scheduleOverrides);   // Stage 4: what this device last SAW — saves diff against it
@@ -4485,7 +4490,7 @@ function initFb() {
     });
     db.ref("together").on("value",s=>{ together=s.val()||{}; if(tab==="kids"||tab==="moms-plan") renderAllSoon(); });   // 🤝 Together — both devices follow the same session
     db.ref("mathSprints").on("value",s=>{ mathSprints=s.val()||{}; if(tab==="mastery"||tab==="schedule") renderAllSoon(); });   // 🔢 Book Sprints
-    db.ref("library/scans").on("value",s=>{ lbScansMS=s.val()||{}; if(tab==="mastery"&&typeof _mastRe==="function") _mastRe(); });   // 🔢 sprint titles (editable in the panel)
+    // 🔢 sprint titles: library/scans/<book> loads one book at a time when a sprint list is first read (SCANLAZY, 2026-11-19)
     db.ref("reviews").on("value",s=>{ reviews=s.val()||{}; try{ rvHeal(); }catch(e){} if(tab==="schedule"&&typeof renderAllSoon==="function") renderAllSoon(); });   // 📅 Review with Mom
     db.ref("brainBreaks").on("value",s=>{
       brainBreaks=s.val()||{};
@@ -4719,6 +4724,13 @@ function initFb() {
       if(tab==="pace"){const el=document.getElementById("content");if(el)renderPace(el);}
       try{ if(typeof reLoaded==="function") reLoaded("pace"); }catch(e){}   // 🧠 REVIEWENGINE: school days need the pace plans
     });
+    // 📚 CURRLIVE (2026-11-08): the curriculum is LIVE — was .once("value"). The first arrival does exactly what the once did;
+    // a later one is this device's own echo (skipped) or another device's change (the copy + a redraw, never a re-lay).
+    db.ref("curriculum").on("value",s=>{ currOnValue(s.val()); });
+    // DONEORDER (2026-11-19, her "Yes, start 3a"; REPORT_phone_battery_2026-11-09.md step 3a): curriculum/done is attached AFTER
+    // the whole-curriculum listener above. Attached first, the Firebase library asked the server for done on its own and then
+    // again inside curriculum (~90 KB twice at every start); attached after, it is served from the curriculum copy already
+    // coming down (the SDK never opens a server listen under a whole-node one). Both still fire on every change, as before.
     // Lesson-identity done records (Stage 1.3) live under curriculum/done but must stay
     // LIVE — the curriculum node itself is loaded once per device and kiosks sit open for
     // days. Kept in currData.done so every reader sees the same object.
@@ -4733,9 +4745,6 @@ function initFb() {
         }
       }catch(e){}
     });
-    // 📚 CURRLIVE (2026-11-08): the curriculum is LIVE — was .once("value"). The first arrival does exactly what the once did;
-    // a later one is this device's own echo (skipped) or another device's change (the copy + a redraw, never a re-lay).
-    db.ref("curriculum").on("value",s=>{ currOnValue(s.val()); });
     db.ref("config/helpers").on("value",s=>{ helpersOnValue(s.val()); });
     db.ref("settings/laundryTimes").on("value",s=>{ if(typeof laundryTimesOnValue==="function") laundryTimesOnValue(s.val()); });   // 🧺 LAUNDRYTIMES
     db.ref("settings/laundry").on("value",s=>{ if(typeof laundrySplitSettingsOnValue==="function") laundrySplitSettingsOnValue(s.val()); });   // 🧺 LAUNDRY_SPLIT: wetBasketMins, airDryHours
@@ -5050,6 +5059,7 @@ function showTab(t,keepMsv){
   if(typeof kcStudyKid!=="undefined") kcStudyKid=null;   // 🧒📚 KC_MASTERY: a tab tap always lands on the page itself
   try{ if(typeof luLgLeave==="function") luLgLeave(); }catch(e){}   // 📒 LAUNDRY_LEDGER: leaving the page folds the ledger
   if(typeof kcPlay!=="undefined"&&kcPlay) kcPlayClose();   // 📚🎮 KC_PLAY: …and leaves a kid's Drills / Games (a sitting is kept, as Quit for now)
+  if(typeof wlClose==="function") wlClose();   // 🎁 WISHES: …and closes a kid's wish list (its listener stops)
   if(typeof mdFrameTab!=="undefined"){ mdFrameTab=(_mdFrameWant===t)?t:null; _mdFrameWant=null; }   // 📚🎮 KC_PLAY: a page framed by Mom's Day only through mdFrameOpen
   if(typeof dcState!=="undefined") dcState=null;   // 📺 DAYCARD: a tab tap closes the board
   mastAddMode=false; mastLogMode=false; mastLogScores={};
@@ -5120,7 +5130,7 @@ function navStackSync(){
 // _mdwCan: Mom's page is hers (momHere); Dad's can be set from his link, his unlocked Day, or by Mom.
 // Navigation + display only: no scheduler, no kid data.
 let ssOrderData=null; try{ ssOrderData=JSON.parse(HA_LS.getItem('ha_day_order')||"null"); }catch(e){}
-const SS_OTHER_VIEWS=["prep","house","weigh","grocery","meals","cal","dadcal","dadall","dadmast","curr","sset","purch","hist","wins","scor","mhq","chores","hq","gen"];   // SCHOOLPAGES: + the School pages · MPGROUPS: + Chores & Stars, HQ, Generate Week   // every Mom's Day sub-view that is NOT a Today page (renderMomsPlanView's routes)
+const SS_OTHER_VIEWS=["prep","house","weigh","grocery","meals","cal","dadcal","dadall","dadmast","curr","sset","hist","wins","scor","mhq","chores","hq","gen","budget","esa","gifts"];   // SCHOOLPAGES: + the School pages · MPGROUPS: + Chores & Stars, HQ, Generate Week · BUDGETTAB: + Budget ▸ Overview / ESA (purch gone)   // every Mom's Day sub-view that is NOT a Today page (renderMomsPlanView's routes)
 let _ssIds={}, _ssD=null;
 var _navStackRO, _navStackSeen;   // var: navStackWire (above) sets the observer before this line runs
 function ssJumpOn(){ try{ return tab==="moms-plan"&&!momSchedView&&SS_OTHER_VIEWS.indexOf(mpSubView)<0; }catch(e){ return false; } }   // Mom's Day ▸ Today (plan / null) or ▸ Dad's Day ('dad')
@@ -7273,19 +7283,40 @@ function _hqGroup(emoji,title,rows){
   return '<div class="rules-card"><div style="display:flex;align-items:center;gap:8px;padding:12px 14px;font-family:\'Fraunces\',serif;font-size:15px;font-weight:700">'+
     '<span style="font-size:18px">'+emoji+'</span>'+title+'</div>'+rows.join('')+'</div>';
 }
-// PURCHASES_START — 💰 Mom HQ ▸ Purchases lives in esa.js (lazy, like Books/library.js). Stage C, 2026-09-13.
+// PURCHASES_START — 💰 Purchases & ESA lives in esa.js (lazy, like Books/library.js). Stage C, 2026-09-13. Since BUDGETTAB (2026-11-20)
+// its door is Mom's Day ▸ 💰 Budget ▸ ESA & purchases (mpSubView 'esa'); the Overview's grant card loads it too (esaLoad).
+function esaLoad(fail){
+  if(window._esLoading) return; window._esLoading=true;
+  const s=document.createElement("script");
+  s.src=/github\.io$/.test(location.hostname)?("esa.js?v="+Date.now()):"esa.js";
+  s.onload=()=>{ if(adminSubTab==="purchases"||(typeof mpSubView!=="undefined"&&tab==="moms-plan"&&(mpSubView==="esa"||mpSubView==="budget"))) renderAll(); };   // SCHOOLPAGES · BUDGETTAB: Budget ▸ ESA / Overview
+  s.onerror=()=>{ window._esLoading=false; if(fail) fail(); };
+  document.head.appendChild(s);
+}
 function renderPurchasesView(el,ah){
   if(!el){el=document.getElementById("content");if(!el)return;}
   if(window.renderPurchases){ renderPurchases(el,ah); return; }
   el.innerHTML=(ah||"")+'<div style="padding:40px;text-align:center;color:var(--muted)">Loading purchases…</div>';
-  if(window._esLoading) return; window._esLoading=true;
-  const s=document.createElement("script");
-  s.src=/github\.io$/.test(location.hostname)?("esa.js?v="+Date.now()):"esa.js";
-  s.onload=()=>{ if(adminSubTab==="purchases"||(typeof mpSubView!=="undefined"&&tab==="moms-plan"&&mpSubView==="purch")) renderAll(); };   // SCHOOLPAGES
-  s.onerror=()=>{ window._esLoading=false; el.innerHTML=(ah||"")+'<div style="padding:40px;text-align:center;color:var(--muted)">Couldn\'t load purchases.</div>'; };
-  document.head.appendChild(s);
+  esaLoad(()=>{ el.innerHTML=(ah||"")+'<div style="padding:40px;text-align:center;color:var(--muted)">Couldn\'t load purchases.</div>'; });
 }
 // PURCHASES_END
+// GIFTS_START — 🎁 Mom's Day ▸ 💰 Budget: the present tracker lives in gifts.js (lazy, like esa.js). Slice 1 (her ask + "Yes, start
+// slice 1" 2026-11-20; PLAN_gift_tracker_budget_2026-11-20.md). The presents are a secret from the kids, so gifts.js — and the
+// gifts/ data it reads — loads only here: Mom inside Mom's Day (momHere), never at app start, never on a kid's device or Dad's TV.
+function renderMPGifts(el){
+  if(!el){el=document.getElementById("content");if(!el)return;}
+  const top=mwBanner('Presents, budgets and hiding spots')+mpSubnav('gifts');
+  if(!(typeof momHere==="function"&&momHere())){ el.innerHTML=top+'<div style="padding:40px;text-align:center;color:var(--muted)">\u{1F512} Mom only.</div>'; return; }
+  if(window.renderGifts){ renderGifts(el,top); return; }
+  el.innerHTML=top+'<div style="padding:40px;text-align:center;color:var(--muted)">Loading presents\u2026</div>';
+  if(window._gfLoading) return; window._gfLoading=true;
+  const s=document.createElement("script");
+  s.src=/github\.io$/.test(location.hostname)?("gifts.js?v="+Date.now()):"gifts.js";
+  s.onload=()=>{ if(tab==="moms-plan"&&mpSubView==="gifts") renderAll(); };
+  s.onerror=()=>{ window._gfLoading=false; el.innerHTML=top+'<div style="padding:40px;text-align:center;color:var(--muted)">Couldn\'t load the gift list \u2014 check the internet and tap 💰 Budget again.</div>'; };
+  document.head.appendChild(s);
+}
+// GIFTS_END
 // EIC_START — ✏️ Editor in Chief skill engine lives in eic.js (lazy, like esa.js). Slice 2, 2026-09-20.
 // 🗓 THE SCHEDULE LINK (her ask 2026-09-22): when a kid's ✏️ switch is on, their Editor in Chief card drops its page
 // numbers, and its button opens the engine's next page. Mom saving a score checks off today's card.
@@ -8685,9 +8716,8 @@ function renderMomHQ(el,ah){
   h+=_hqB?'':_hqGroup("⭐","Stars & Rewards",[   // MPGROUPS: School ▸ Wins
     _hqRow("wins","🌟","Wins · Star Bank · Store","Claims, give/dock, withdrawals, forfeited, store editor — tap ✓ Mom on the kid bar for Mom tools")
   ]);
-  h+=_hqB?'':_hqGroup("👪","Family & App",[   // MPGROUPS: School ▸ Settings / Purchases
-    _hqRow("settings","⚙️","Settings","Kids & colors, PIN, babysitter, page switches, family rules, slots & on-time spins, songs"),
-    pageOn("purchases")?_hqRowFn("setAdminSub('purchases')","💰","Purchases & ESA","Orders, wishlist, two budgets — the ESA grant and family money"):""
+  h+=_hqB?'':_hqGroup("👪","Family & App",[   // MPGROUPS: School ▸ Settings · BUDGETTAB (her pick "Budget only" 2026-11-20): the Purchases & ESA row is gone — ESA lives in Mom's Day ▸ 💰 Budget
+    _hqRow("settings","⚙️","Settings","Kids & colors, PIN, babysitter, page switches, family rules, slots & on-time spins, songs")
   ]);
   h+=_hqB?'':_hqGroup("📊","Reports",[   // MPGROUPS: School ▸ History
     _hqRow("history","📜","History Log","Completed work, by time or by subject"),
@@ -12341,6 +12371,9 @@ function renderMomsPlanView(el){
   if(mpSubView==='prep'){ return renderMPPrep(el); }
   if(mpSubView==='house'){ return renderHousehold(el); }   // 🏡 HOUSEHOLD
   if(mpSubView==='weigh'){ return renderMPWeigh(el); }
+  if(mpSubView==='gifts'){ return renderMPGifts(el); }   // 🎁 GIFTS: Mom's Day ▸ 💰 Budget (gifts.js, lazy)
+  if(mpSubView==='budget'){ return renderMPBudget(el); }   // 📊 BUDGETTAB: Mom's Day ▸ 💰 Budget ▸ Overview
+  if(mpSubView==='esa'){ return renderMPEsa(el); }         // 💰 BUDGETTAB: Mom's Day ▸ 💰 Budget ▸ ESA & purchases (esa.js, lazy)
   if(mpSubView!=='grocery') grFromDad=(mpSubView==='dad'||mpSubView==='dadcal'||mpSubView==='dadall'||mpSubView==='dadmast');   // 👨 DADFIX   // 🛒 the list remembers which page opened it
   if(mpSubView==='grocery'){ return renderGrocery(el); }
   if(mpSubView==='meals'){ return renderKitchen(el); }
@@ -26020,8 +26053,10 @@ function mpSubnav(active){
   const kbtn=tbtn(kit,"mpGoto(mpKitchenLast())",'🍳 Kitchen'), sbtn=tbtn(sch,"mpSchoolOpen(mpSchoolLast())",'🎓 School');
   const home=(active==='plan'||active==='hq'||active==='gen'), house=(active==='house'||active==='chores'), hlth=(active==='weigh');   // MPGROUPS: each top tab with a sub-row
   const hbtn=tbtn(home,"mpGoto('plan')",'🏡 Home Base'), hsbtn=tbtn(house,"mpGoto('house')",'🧹 Household'), hlbtn=tbtn(hlth,"mpGoto('weigh')",'❤️ Health');   // ❤️ Health (was ⚖️ Weigh-In — now its first sub-tab)
-  const sub=(kit&&typeof mpKitchenRow==="function")?mpKitchenRow(active):((sch&&typeof mpSchoolRow==="function")?mpSchoolRow(active):((typeof mpGroupRow==="function")?mpGroupRow(active):''));   // MPSUBROW: inside the sticky element
-  return `<div id="mp-subnav" style="background:#fff;border-bottom:2px solid #DEF2F1"><div class="mp-row" style="display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px">${hbtn}${btn('cal','🗓 Schedule')}${hsbtn}${kbtn}${sbtn}${hlbtn}</div>${sub}</div>`;
+  const bud=(typeof MP_BUDGET!=="undefined")?MP_BUDGET.indexOf(active)>=0:active==='gifts';   // BUDGETTAB: on Overview / Gifts / ESA the 💰 Budget tab is the lit one
+  const gbtn=tbtn(bud,(typeof mpBudgetLast==="function")?"mpGoto(mpBudgetLast())":"mpGoto('gifts')",'💰 Budget');   // GIFTS (her ask 2026-11-20: "a new tab in Mom's Day called budget") · BUDGETTAB: reopens the last Budget page
+  const sub=(kit&&typeof mpKitchenRow==="function")?mpKitchenRow(active):((sch&&typeof mpSchoolRow==="function")?mpSchoolRow(active):((bud&&typeof mpBudgetRow==="function")?mpBudgetRow(active):((typeof mpGroupRow==="function")?mpGroupRow(active):'')));   // MPSUBROW: inside the sticky element
+  return `<div id="mp-subnav" style="background:#fff;border-bottom:2px solid #DEF2F1"><div class="mp-row" style="display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px">${hbtn}${btn('cal','🗓 Schedule')}${hsbtn}${kbtn}${sbtn}${gbtn}${hlbtn}</div>${sub}</div>`;
 }
 // KITCHENTAB_START — one 🍳 Kitchen tab on Mom's Day's menu row in place of Meals · Shopping List · Prep; those three become its own
 // sub-row, pinned right under the menu row (her ask 2026-11-02: "Menu, Shopping list and Prep need a central title tab with those three
@@ -26052,9 +26087,10 @@ function mpKitchenRow(active){
 // functions the Schedule's Admin hub draws, under her banner + this menu, with none of the Schedule's bars — Curriculum "opens up
 // just the curriculum … not the today, the week, the month … the schedule, the wins, the history, admin … you wouldn't need it
 // to say grid". Display + navigation only: no Firebase writes of their own.
-const MP_SCHOOL=['notebook','mastery','units','curriculum','settings','purchases','history','wins','scores','mhq'];   // SCORESPAGE: + 📊 Scores   // 'mhq' = Mastery ▸ Settings (lit under Mastery)
-const MP_SCHOOL_VIEWS={curr:'curriculum',sset:'settings',purch:'purchases',hist:'history',wins:'wins',scor:'scores',mhq:'mhq'};   // SCORESPAGE: scor → 📊 Scores   // Mom's Day sub-view → School chip
-const MP_SCHOOL_SUBS={curriculum:'The whole curriculum \u2014 grid, subject cards, pacing, rules',settings:'Kids, codes, page switches, family rules',purchases:'Orders, wishlist, the ESA grant and family money',history:'Completed work, trends, attendance, the weekly report',wins:'Stars, trophies and book progress',scores:'Where each kid is \u2014 right %, ladder, week, minutes, load',mhq:'Mastery settings \u2014 rules, decks, sessions, cards'};
+// BUDGETTAB (her pick "Budget only" 2026-11-20): 💰 Purchases left this row — it is Mom's Day ▸ 💰 Budget ▸ ESA & purchases now.
+const MP_SCHOOL=['notebook','mastery','units','curriculum','settings','history','wins','scores','mhq'];   // SCORESPAGE: + 📊 Scores   // 'mhq' = Mastery ▸ Settings (lit under Mastery)
+const MP_SCHOOL_VIEWS={curr:'curriculum',sset:'settings',hist:'history',wins:'wins',scor:'scores',mhq:'mhq'};   // SCORESPAGE: scor → 📊 Scores   // Mom's Day sub-view → School chip
+const MP_SCHOOL_SUBS={curriculum:'The whole curriculum \u2014 grid, subject cards, pacing, rules',settings:'Kids, codes, page switches, family rules',history:'Completed work, trends, attendance, the weekly report',wins:'Stars, trophies and book progress',scores:'Where each kid is \u2014 right %, ladder, week, minutes, load',mhq:'Mastery settings \u2014 rules, decks, sessions, cards'};
 function mpSchoolSub(t){ for(const k in MP_SCHOOL_VIEWS) if(MP_SCHOOL_VIEWS[k]===t) return k; return null; }   // chip → its Mom's Day sub-view, null for a framed tab
 function mpSchoolLast(){ let v=null; try{ v=HA_LS.getItem('ha_mp_school'); }catch(e){} return MP_SCHOOL.indexOf(v)>=0?v:'notebook'; }
 function mpSchoolNote(t){ if(MP_SCHOOL.indexOf(t)<0) return; try{ HA_LS.setItem('ha_mp_school',t); }catch(e){} }
@@ -26062,12 +26098,13 @@ function mpSchoolRow(active){
   const chip=(on,t,lbl)=>`<button onclick="mpSchoolOpen('${t}')" style="flex:0 0 auto;white-space:nowrap;padding:6px 12px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:800;border:1.5px solid ${on?'#2B7A78':'transparent'};border-radius:20px;cursor:pointer;color:${on?'#1f5e5c':'#6b7280'};background:${on?'#DEF2F1':'transparent'}">${lbl}</button>`;
   const b=(t,lbl)=>chip(active===t,t,lbl);
   const mast=(active==='mastery'||active==='mhq');
-  const mhqOn=(typeof pageOn!=="function")||pageOn("mastery"), purchOn=(typeof pageOn!=="function")||pageOn("purchases");
-  let h=`<div id="mp-school-row" class="mp-sub">${b('notebook','📓 Notebooks')}${chip(mast,'mastery','🧠 Mastery')}${b('units','📚 Units')}${b('curriculum','📖 Curriculum')}${b('settings','⚙️ Settings')}${purchOn?b('purchases','💰 Purchases'):''}${b('history','📜 History')}${b('wins','🌟 Wins')}${b('scores','📊 Scores')}</div>`;   // SCORESPAGE: the 📊 Scores chip
+  const mhqOn=(typeof pageOn!=="function")||pageOn("mastery");
+  let h=`<div id="mp-school-row" class="mp-sub">${b('notebook','📓 Notebooks')}${chip(mast,'mastery','🧠 Mastery')}${b('units','📚 Units')}${b('curriculum','📖 Curriculum')}${b('settings','⚙️ Settings')}${b('history','📜 History')}${b('wins','🌟 Wins')}${b('scores','📊 Scores')}</div>`;   // SCORESPAGE: the 📊 Scores chip
   if(mast) h+=`<div id="mp-mastery-row" class="mp-sub mp-sub2">${b('mastery','🧠 Mastery')}${mhqOn?b('mhq','⚙️ Settings'):''}</div>`;   // the two masteries, one place
   return h;
 }
 function mpSchoolOpen(t){
+  if(t==='purchases'&&typeof mpEsaOpen==="function"){ mpEsaOpen(); return; }   // BUDGETTAB: an old Purchases door lands in 💰 Budget
   if(MP_SCHOOL.indexOf(t)<0) t='notebook';
   mpSchoolNote(t);
   const v=mpSchoolSub(t);
@@ -26079,8 +26116,9 @@ function mpSchoolOpen(t){
 function mpCurrBare(){ try{ return tab==="moms-plan"&&mpSubView==="curr"; }catch(e){ return false; } }
 // Links that used to land on the Schedule's Admin hub land on the School page instead while she is on a Mom's Day page.
 function mpAdminRoute(sub){
+  if(sub==='purchases'&&typeof mpEsaOpen==="function"&&((typeof pageOn!=="function")||pageOn("purchases"))){ mpEsaOpen(); return true; }   // BUDGETTAB: from anywhere (the Schedule's Admin 💰 tab too) → Mom's Day ▸ 💰 Budget ▸ ESA & purchases
   try{ if(tab!=="moms-plan"||momSchedView) return false; }catch(e){ return false; }
-  const v=({curriculum:'curr',settings:'sset',rules:'sset',purchases:'purch',mastery:'mhq',chores:'chores',hq:'hq',generate:'gen'})[sub]; if(!v) return false;   // MPGROUPS: + chores / hq / generate
+  const v=({curriculum:'curr',settings:'sset',rules:'sset',purchases:'esa',mastery:'mhq',chores:'chores',hq:'hq',generate:'gen'})[sub]; if(!v) return false;   // MPGROUPS: + chores / hq / generate · BUDGETTAB: purchases → esa
   mpGoto(v); return true;
 }
 // All · each kid, for the pages that read the Schedule's kid pick (History) and have no kid row of their own here.
@@ -26093,7 +26131,6 @@ function renderMPSchool(el){
   const top=mwBanner(MP_SCHOOL_SUBS[key]||'')+mpSubnav(key);
   if(key==='curriculum'){ renderCurriculumView(el,top); return; }   // bare (mpCurrBare): no Grid bar, stickies under the menu
   if(key==='settings'){ renderSettings(el,top); return; }
-  if(key==='purchases'){ renderPurchasesView(el,top); return; }
   if(key==='mhq'){ renderMasteryHQ(el,top); return; }
   if(key==='scores'&&typeof renderMPScores==="function"){ renderMPScores(el,top); return; }   // SCORESPAGE: the Overall card + Load meter, read-only
   el.innerHTML=top+(key==='history'?mpSchoolKidRow():'')+'<div id="mp-school-body"></div>';   // History / Wins draw into a box under the menu (they take no header)
@@ -26129,7 +26166,102 @@ function renderMPGroupPage(el){
   renderMomHQ(el,mwBanner('Alerts, Generate Week, links and doors')+mpSubnav('hq'));
 }
 // MPGROUPS_END
+// BUDGETTAB_START — 💰 Budget gets a sub-row of its own, like Kitchen and School: 📊 Overview · 🎁 Gifts · 💰 ESA & purchases
+// (her ask 2026-11-20: "this is also where the ESA grant and stuff … a new tab in Mom's Day called budget"; her pick "Budget only" —
+// the ESA page moves in and Mom HQ loses its row. Slices 4 + 8 of PLAN_gift_tracker_budget_2026-11-20.md.)
+//  · 🎁 Gifts is mpSubView 'gifts' (renderMPGifts → gifts.js), unchanged.
+//  · 💰 ESA & purchases is the Purchases page (renderPurchasesView → esa.js) under her banner + this menu, mpSubView 'esa' (it was
+//    School ▸ 💰 Purchases, 'purch'). Every old door — setAdminSub('purchases'), the Schedule Admin hub's 💰 tab — lands here
+//    (mpAdminRoute). pageOn("purchases") still switches it off for a family that doesn't use it.
+//  · 📊 Overview (mpSubView 'budget') is the plan's money page (§3.1): one card per pot of money, each tappable into its page.
+//    Read-only — the grant numbers come from esa.js's own esBalance, groceries from the trips + budgets the Grocery List keeps,
+//    bills from bills/. It never reads gifts/: the presents load only inside 🎁 Gifts (the secret stays behind that door).
+// The tab reopens whichever of the three was used last on THIS device (HA_LS, never synced); first time it's the Overview — the
+// money page the plan opens on, with Gifts one tap away. Overview and ESA are Mom's, like Gifts (momHere). No Firebase writes.
+const MP_BUDGET=['budget','gifts','esa'];
+function mpBudgetEsaOn(){ return (typeof pageOn!=="function")||pageOn("purchases"); }
+function mpBudgetLast(){ let v=null; try{ v=HA_LS.getItem('ha_mp_budget'); }catch(e){} if(v==='esa'&&!mpBudgetEsaOn()) v=null; return MP_BUDGET.indexOf(v)>=0?v:'budget'; }
+function mpBudgetNote(v){ if(MP_BUDGET.indexOf(v)<0) return; try{ HA_LS.setItem('ha_mp_budget',v); }catch(e){} }
+function mpBudgetRow(active){
+  const b=(v,lbl)=>`<button onclick="mpGoto('${v}')" style="flex:0 0 auto;white-space:nowrap;padding:6px 12px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:800;border:1.5px solid ${active===v?'#2B7A78':'transparent'};border-radius:20px;cursor:pointer;color:${active===v?'#1f5e5c':'#6b7280'};background:${active===v?'#DEF2F1':'transparent'}">${lbl}</button>`;
+  return `<div id="mp-budget-row" class="mp-sub">${b('budget','📊 Overview')}${b('gifts','🎁 Gifts')}${mpBudgetEsaOn()?b('esa','💰 ESA & purchases'):''}</div>`;
+}
+function mpEsaOpen(){ mpGoto(mpBudgetEsaOn()?'esa':'budget'); }
+function _budMomOnly(el,top){ if(typeof momHere==="function"&&momHere()) return false; el.innerHTML=top+'<div style="padding:40px;text-align:center;color:var(--muted)">\u{1F512} Mom only.</div>'; return true; }
+function renderMPEsa(el){
+  if(!el){el=document.getElementById("content");if(!el)return;}
+  if(!mpBudgetEsaOn()){ mpSubView='budget'; renderMPBudget(el); return; }   // the family switched Purchases off
+  const top=mwBanner('Orders, wishlist, the ESA grant and family money')+mpSubnav('esa');
+  if(_budMomOnly(el,top)) return;
+  renderPurchasesView(el,top);
+}
+// ── 📊 the Overview's numbers (each one read-only) ──
+function _budUsd(n){ n=Math.round((+n||0)*100)/100; return "$"+(n%1?n.toFixed(2):String(n)).replace(/\B(?=(\d{3})+(?!\d))/g,","); }
+function _budAmt(v){ return parseFloat(String(v==null?"":v).replace(/[^0-9.]/g,""))||0; }   // a bill's amount is what she typed ("$120", "89.50")
+// 💳 this month's bills: a monthly bill every month, a yearly one in its own month; paid = paidThrough has reached this cycle
+function budBillsMonth(iso){
+  const ym=iso.slice(0,7), yy=iso.slice(0,4), mm=+iso.slice(5,7), B=(typeof billsData!=="undefined"&&billsData)||{};
+  const r={n:0,nDue:0,nPaid:0,due:0,paid:0,noAmt:0,all:0};
+  Object.keys(B).forEach(id=>{ const b=B[id]; if(!b||!b.name) return; r.all++;
+    const yearly=b.freq==="yearly"; if(yearly&&(+b.dueMonth||1)!==mm) return;
+    const paid=!!b.paidThrough&&String(b.paidThrough)>=(yearly?yy:ym), a=_budAmt(b.amt);
+    if(!a) r.noAmt++;
+    r.n++; if(paid){ r.nPaid++; r.paid+=a; } else { r.nDue++; r.due+=a; } });
+  r.total=r.due+r.paid; return r;
+}
+// 🛒 each grocery budget against its own week or month, plus every trip this week / month (the Grocery List's own helpers)
+function budGrocery(iso){
+  const out={rows:[],week:0,month:0,trips:0};
+  if(typeof grData==="undefined"||!grData||typeof grBudgets!=="function") return out;
+  grBudgets().forEach(b=>{ const per=b.per==="month"?"month":"week"; out.rows.push({emoji:b.emoji||"🛒",name:b.name,amt:+b.amt||0,per:per,spent:grSpentBudget(b.id,grPeriodStart(per))}); });
+  out.week=grSpent(grWeekStart()); out.month=grSpent(iso.slice(0,8)+"01"); out.trips=Object.keys(grData.trips||{}).length;
+  return out;
+}
+function budBillsOpen(){ mpGoto('plan'); setTimeout(function(){ try{ if(typeof ssJumpTo==="function") ssJumpTo('bills'); }catch(e){} },120); }   // the 💳 Bills card on Home Base
+function renderMPBudget(el){
+  if(!el){el=document.getElementById("content");if(!el)return;}
+  const top=mwBanner('Every pot of money at a glance')+mpSubnav('budget');
+  if(_budMomOnly(el,top)) return;
+  const iso=_todayStr();
+  const card=(id,click,col,title,body)=>'<div id="bud-'+id+'" role="button" onclick="'+click+'" style="cursor:pointer;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">'
+    +'<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:'+col+';color:#fff;font-weight:800;font-size:13px">'+title+'<span style="margin-left:auto;font-size:16px;opacity:.9">›</span></div>'
+    +'<div style="padding:10px 14px 12px;font-size:13px">'+body+'</div></div>';
+  const row=(l,v,c,big)=>'<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:2px 0"><span style="color:#6b6560">'+l+'</span><b style="white-space:nowrap;'+(c?'color:'+c+';':'')+(big?'font-size:16px':'')+'">'+v+'</b></div>';
+  const note=t=>'<div style="font-size:11.5px;color:var(--muted);margin-top:4px">'+t+'</div>';
+  let h='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:12px;padding:12px;max-width:900px;margin:0 auto;box-sizing:border-box">';
+  // 🎁 Gifts — a door only; the presents load inside it
+  h+=card('gifts',"mpGoto('gifts')","#b5394a","🎁 Gifts",'<div style="color:#6b6560">Presents, budgets and hiding spots.</div><div style="margin-top:8px;font-weight:800;color:#b5394a">Open gifts →</div>');
+  // 💰 ESA grant — esa.js's own balance
+  if(mpBudgetEsaOn()){
+    let b='';
+    if(typeof esBalance!=="function"){ if(typeof esaLoad==="function") esaLoad(); b='<div style="color:var(--muted)">Loading…</div>'; }
+    else{ const E=esBalance('esa'), F=esBalance('family');
+      if(E.total){ b+=row('<b>Remaining</b>',_budUsd(E.remaining),E.remaining<0?'#b91c1c':'#1f5e5c',true)+row('Grant total',_budUsd(E.total))+row('Approved / arrived',_budUsd(E.committed),'#16a34a'); if(E.pending) b+=row('Pending approval',_budUsd(E.pending),'#d97706'); }
+      else if(E.count){ b+=row('<b>Spent</b>',_budUsd(E.committed),null,true); if(E.pending) b+=row('Pending',_budUsd(E.pending),'#d97706'); b+=note('No grant total set yet.'); }
+      else b+='<div style="color:var(--muted)">No orders yet.</div>';
+      if(F.count||F.total) b+=row('💳 Family money spent',_budUsd(F.committed)+(F.total?' of '+_budUsd(F.total):''));
+      if(E.year) b='<div style="font-size:11.5px;color:var(--muted);margin-bottom:4px">School year '+esc(E.year)+'</div>'+b; }
+    h+=card('esa',"mpGoto('esa')","#2563eb","💰 ESA grant",b);
+  }
+  // 🛒 Groceries — the trips the Grocery List already logs
+  { const G=budGrocery(iso); let b='';
+    G.rows.forEach(r=>{ if(r.amt) b+=row(esc(r.emoji+' '+r.name)+' · this '+r.per,_budUsd(r.spent)+' of '+_budUsd(r.amt),r.spent>r.amt?'#b91c1c':'#1f5e5c'); });
+    if(G.trips){ b+=row('All trips this week',_budUsd(G.week),null,!b)+row('All trips this month',_budUsd(G.month)); }
+    else b+='<div style="color:var(--muted)">No trips yet — checking out on the list adds them.</div>';
+    h+=card('grocery',"mpGoto('grocery')","#15803d","🛒 Groceries",b); }
+  // 💳 Bills — this month: due · paid · total
+  { const B=budBillsMonth(iso); let b='';
+    if(!B.all) b='<div style="color:var(--muted)">No bills yet — add them on 🏡 Home Base.</div>';
+    else if(!B.n) b='<div style="color:var(--muted)">No bills this month.</div>';
+    else{ b+=row('Still due ('+B.nDue+')',_budUsd(B.due),B.nDue?'#b45309':'#16a34a')+row('Paid ('+B.nPaid+')',_budUsd(B.paid),'#16a34a')+row('<b>This month</b>',_budUsd(B.total),null,true);
+      if(B.noAmt) b+=note(B.noAmt+' with no amount typed'); }
+    h+=card('bills',"budBillsOpen()","#2C5F8A","💳 Bills",b); }
+  h+='</div><div style="text-align:center;font-size:11.5px;color:var(--muted);padding:0 16px 20px">Tap a card to open it.</div>';
+  el.innerHTML=top+h;
+}
+// BUDGETTAB_END
 function mpGoto(v){ mpSubView=v; if(typeof mpKitchenNote==="function") mpKitchenNote(v);   // KITCHENTAB: the Kitchen tab reopens this page next time
+  if(typeof mpBudgetNote==="function") mpBudgetNote(v);   // BUDGETTAB: …and the 💰 Budget tab its own
   if(mdSmoothCalNow(v)){ msvEnter(); try{window.scrollTo(0,0);}catch(e){} return; }   // MDSMOOTH: ▸ Schedule (Today) opens the Schedule view in this same tick
   if(momSchedView||tab!=="moms-plan"){ showTab("moms-plan"); try{window.scrollTo(0,0);}catch(e){} return; }   // 👩 MSV: leave the Schedule view
   const el=document.getElementById('content'); if(el) renderMomsPlan(el); try{window.scrollTo(0,0);}catch(e){} }
@@ -27220,10 +27352,25 @@ function digestWeekOver(){
   if(!ds.length) return false;
   return ds.every(d=>d<bbTodayKey());
 }
+// DIGESTLAZY_START — 📋 digest/ (frozen weekly reports + seen + mute, ~190 KB) loads when the weekly report opens, not at every
+// start (her "Yes, start 3a" 2026-11-19; REPORT_phone_battery_2026-11-09.md step 3a). Only History ▸ Report reads it. Until it has
+// arrived the report says Loading and nothing freezes or writes, so a frozen week is never overwritten by an empty copy.
+let _digestState=0;   // 0 never asked · 1 loading · 2 here
+function digestEnsure(){
+  if(_digestState===2) return true;
+  if(!db) return true;   // no connection object: the report works on what it has, as before
+  if(_digestState===0){
+    _digestState=1;
+    db.ref("digest").on("value",s=>{ digestData=s.val()||{}; const first=_digestState!==2; _digestState=2; if(first&&typeof renderAllSoon==="function") renderAllSoon(); });
+  }
+  return false;
+}
+// DIGESTLAZY_END
 // Archived week: return the frozen report, freezing it now if this is the first
 // Mom view since close. Current week: always computed live by the renderer.
 function digestFreezeIfNeeded(wkKey){
   if(wkKey===WK) return null;
+  if(typeof digestEnsure==="function"&&!digestEnsure()) return null;   // DIGESTLAZY: never freeze before digest/ has arrived
   const have=((digestData||{}).report||{})[wkKey];
   if(have) return have;
   if(!archive[wkKey]) return null;
@@ -27282,6 +27429,7 @@ function digestToggleKid(k){ digestKidOpen[k]=!digestKidOpen[k];
 
 function renderHistoryReport(){
   if(!momHere()) return '<div style="text-align:center;color:var(--muted);padding:40px 20px">📋 The weekly report is a Mom-only view.<br>Unlock Mom mode to read it.</div>';
+  if(typeof digestEnsure==="function"&&!digestEnsure()) return '<div style="text-align:center;color:var(--muted);padding:40px 20px">📋 Loading the weekly report…</div>';   // DIGESTLAZY
   const KC={lincoln:"#2a78d6",ellis:"#1baf7a",lucy:"#eda100",julian:"#9333ea"};
   const kName=k=>cap(k); // KIDNAME_ROSTER
   const wk=digestWkSel||WK, isCur=wk===WK;
@@ -36674,6 +36822,7 @@ function haNbContext(kid){
   } }catch(e){}
   let units=[]; try{ units=haKidUnits(kid).filter(u=>u&&u.nbInsert!==false).map(u=>haBuildUnitInsight(kid,u)).filter(Boolean); }catch(e){}
   try{ if(typeof usNbAttach==="function") usNbAttach(kid,units); }catch(e){}   // 🇺🇸 USNB: the US Path's stage pages read ins.us
+  try{ if(typeof uwAttach==="function") units=uwAttach(kid,units,tasks,dates); }catch(e){}   // 🧾 UNITWEEK: "This week we will…" on each unit page (ins.week)
   // Recent drill misses per item ("m"/"~" results over the last few sessions) so the notebook's
   // review flag can resurface letters/numbers Julian struggled with this week. Kept separate from
   // the item's lifetime drop_count — this ages out as he recovers.
@@ -44732,13 +44881,53 @@ function renderKidsCorner(el){
       +'</div>'+((typeof tsStripHTML==="function")?tsStripHTML(k):'')+'</div>';   // TROPHYSHELF (her decisions 2026-10-22): 🏆 Trophies + the streak nudge in the top strip
     {
       if(typeof tsShelfHTML==="function"&&typeof tsOpenKid!=="undefined"&&tsOpenKid===k) h+=tsShelfHTML(k);   // TROPHYSHELF: the shelf section, inside the Corner, when open
-      h+=kcCalToggleHTML(k);
-      h+=kcModeBodyHTML(k);   // KC_LISTS: Today | My Lists | Month
+      if(typeof wlOn==="function"&&wlOn(k)) h+=wlPageHTML(k);   // 🎁 WISHES: the kid's wish list, in place of the buttons + page
+      else {
+        h+=kcCalToggleHTML(k);
+        if(typeof wlTileHTML==="function") h+=wlTileHTML(k);   // 🎁 WISHES: the 🎁 My wish list button
+        h+=kcModeBodyHTML(k);   // KC_LISTS: Today | My Lists | Month
+      }
     }
   }
   h+='</div>';
   el.innerHTML=h;
 }
+// WISHES_START — 🎁 Kids' Corner ▸ My wish list (gift tracker slice 7: her answer "Kids' wish lists → yes, later" and her yes to
+// building it, 2026-11-20; PLAN_gift_tracker_budget_2026-11-20.md §3.7 + §4 slice 7). The page lives in wishes.js (lazy, like
+// gifts.js); this block is only the button, the open / close state and the loader. A kid adds wishes — a few words, a picture or
+// both, and ⭐–⭐⭐⭐ — and removes their own. THE SECRET (§3.7): wishes.js never reads gifts/ and nothing about presents is ever written
+// under wishes/, so the list never changes because Mom bought something. It listens to wishes/<this kid> ONLY, only while open.
+//   wishes/<kid>/<wid> {text?, stars?, hasPhoto?, ts}   ·   wishPhotos/<kid>/<wid> dataURL (its own node, read one at a time)
+// Mom sees each kid's list in Mom's Day ▸ 💰 Budget ▸ 🎁 Gifts, on that kid's page (gifts.js GIFTS_WISH). Every family, every kid.
+var wlKid=null;   // the Kids' Corner kid whose wish list is open (page state, never saved — a reload lands on their usual page)
+function wlOn(k){ if(wlKid&&(wlKid!==k||typeof tab==="undefined"||tab!=="kids")) wlClose(); return !!wlKid&&wlKid===k; }
+function wlTileHTML(k){
+  const col=KID_COLOR[k]||"#2B7A78", big=kcLittle(k);
+  return '<div style="display:flex;padding:8px 12px 0;max-width:640px;margin:0 auto"><button onclick="wlOpen(\''+k+'\')" style="flex:1;padding:'+(big?'10px':'7px')+' 6px;border-radius:20px;border:2px dashed '+col+';background:#fff;color:'+col+';font-size:'+(big?'15px':'13px')+';font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F381} My wish list</button></div>';
+}
+function wlOpen(k){
+  if(!k||ROSTER.indexOf(k)<0) return;
+  if(typeof kcPlay!=="undefined"&&kcPlay) kcPlayClose();
+  wlKid=k; window._wlErr=false;
+  if(!window.wishesPageHTML&&!window._wlLoading){
+    window._wlLoading=true;
+    const s=document.createElement("script");
+    s.src=/github\.io$/.test(location.hostname)?("wishes.js?v="+Date.now()):"wishes.js";
+    s.onload=()=>{ if(wlKid) renderAll(); };
+    s.onerror=()=>{ window._wlLoading=false; window._wlErr=true; if(wlKid) renderAll(); };
+    document.head.appendChild(s);
+  }
+  renderAll(); try{ window.scrollTo(0,0); }catch(e){}
+}
+function wlClose(){ if(!wlKid) return; wlKid=null; try{ if(window.wishesStop) wishesStop(); }catch(e){} }
+function wlBack(){ wlClose(); renderAll(); try{ window.scrollTo(0,0); }catch(e){} }
+function wlPageHTML(k){
+  if(window.wishesPageHTML) return wishesPageHTML(k);
+  const col=KID_COLOR[k]||"#2B7A78";
+  return '<div style="padding:12px;max-width:720px;margin:0 auto"><button onclick="wlBack()" style="padding:10px 14px;border-radius:14px;border:2px solid '+col+';background:#fff;color:'+col+';font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u2190 Back</button>'+
+    '<div style="padding:30px;text-align:center;color:var(--muted);font-size:15px;font-weight:600">'+(window._wlErr?'Couldn\u2019t open your wish list \u2014 check the internet and try again.':'Opening your wish list\u2026')+'</div></div>';
+}
+// WISHES_END
 function kcAddOpen(iso){ kcAddIso=(kcAddIso===iso)?null:iso; kcConfirmDel=null; renderAll(); setTimeout(function(){ const e=document.getElementById("kc-ev-title"); if(e) e.focus(); },60); }
 function kcSaveEvent(){
   _kcLoadKid(); const kid=kcKid; if(!kid||!kcAddIso) return;
@@ -45403,6 +45592,7 @@ function relayWeek(why,info){
     _rlwPend.undo.push(u.gone?{p:u.p,gone:true}:{p:u.p,was:(u.was===undefined?null:u.was)}); });
   (info.subjects||[]).forEach(function(s){ if(s&&s.kid&&s.sk&&!_rlwPend.subjects.some(x=>x.kid===s.kid&&x.sk===s.sk)) _rlwPend.subjects.push({kid:s.kid,sk:s.sk}); });   // 🔁 RELAY3: pass B — the subjects re-laid after the sweep, one after another
   if(info.mvt){ if(!_rlwPend.mvt) _rlwPend.mvt=[]; _rlwPend.mvt.push(info.mvt); }   // 📅 MVTRELAY: the moved card and the slot it left
+  (info.retr||[]).forEach(function(k){ if(!k) return; if(!_rlwPend.retr) _rlwPend.retr=[]; if(_rlwPend.retr.indexOf(k)<0) _rlwPend.retr.push(k); });   // 🃏 RETRLIVE: pass R — the kids whose practice days changed
   (info.fams||[]).forEach(function(f){ if(!f||!f.id||!f.key) return; if(!_rlwPend.fams) _rlwPend.fams=[]; if(!_rlwPend.fams.some(x=>x.id===f.id&&x.key===f.key)) _rlwPend.fams.push({id:f.id,key:f.key}); });   // UNITFT: pass F — family items laid into the board week
   try{ clearTimeout(_rlwTimer); }catch(e){}
   _rlwTimer=setTimeout(function(){ _rlwFire(0); },RLW_WAIT_MS);
@@ -45422,10 +45612,12 @@ function _rlwFire(att){
     // 🔁 RELAY3: pass A (the sweep), then pass B (the listed subjects, chained through each re-lay's then) — one snapshot,
     // one diff, one log line for both; the lock is released when the chain is over
     try{ if(typeof _rlwMvtOnly==="function"&&_rlwMvtOnly(pend)) _rlwRun(pend,function(fin){ _rlwChain(pend.subjects||[],pend,fin); },_done);   // 📅 MVTRELAY: a move-only run is pass B alone
+      else if(_rlwRetrOnly(pend)) _rlwRun(pend,function(){},_done);   // 🃏 RETRLIVE: a practice-days-only run is pass R alone (inside _rlwRun) — nothing else is re-laid
       else _rlwRun(pend,function(fin){ if(typeof uftRelayFams==="function") uftRelayFams(pend); cascadeIntraWeek(); if(typeof runCascade==="function") runCascade(); _rlwGuard(pend); _rlwChain(pend.subjects||[],pend,fin); },_done); }   // UNITFT: pass F before the sweep, so the sweep and the guard pack around the new family cards
     catch(e){ dbg("relay run: "+e); _done(); }
   });
 }
+function _rlwRetrOnly(pend){ return !!(pend&&pend.retr&&pend.retr.length&&(pend.whys||[]).every(function(w){ return w==="retrieval"; })); }   // 🃏 RETRLIVE
 // ⏰ RELAYGUARD (slice E demo run, 2026-11-08): the school-end guard runs on pass A even when the sweep had nothing to sweep. The
 // cascade's quiet path (no card from a past day to move) heals and re-packs but never calls seGuardWeek — only its sweeping path
 // does, inside safeWriteTasks — so ⏰ a shorter Thursday (11:00–2:30) set on Wednesday left a kid's Typing 2:20–2:35 and Closing
@@ -45481,9 +45673,11 @@ function _rlwWords(e){
   const kids=Object.keys(per).map(function(k){ return cap(k)+" "+per[k]; }).join(", ");
   const nm=(e.moves||[]).length, nr=(e.removed||[]).length;
   const nSat=(String(e.why||"").split(",").indexOf("saturday")>=0)?(e.removed||[]).filter(function(c){ return c&&c.day==="saturday"&&!c.lid; }).length:0;   // 📅 TWSSAT: a Saturday daily taken off is not "to next week"
+  const nRetr=(String(e.why||"").split(",").indexOf("retrieval")>=0)?(e.removed||[]).filter(function(c){ return c&&c.subjectKey==="retrieval"; }).length:0;   // 🃏 RETRLIVE: a practice card taken off is not "to next week"
   let s=(e.label||"Re-laid")+" → "+nm+" card"+(nm===1?"":"s")+" moved"+(kids?" ("+kids+")":"");
-  if(nr-nSat) s+=" · "+(nr-nSat)+" to next week";
+  if(nr-nSat-nRetr) s+=" · "+(nr-nSat-nRetr)+" to next week";
   if(nSat) s+=" · "+nSat+" off Saturday";
+  if(nRetr) s+=" · "+nRetr+" taken off";
   const na=(e.added||[]).length; if(na) s+=" · "+na+" added";   // RELAY3D
   const nb=(e.boxed||[]).length; if(nb) s+=" · "+nb+" didn't fit (in the day's box)";   // 🃏🎯 DMSLOT
   if(e.locked&&e.locked.length) s+=" · ⚠ "+e.locked.length+" held card"+(e.locked.length===1?"":"s")+" changed";
@@ -45524,6 +45718,7 @@ function _rlwRun(pend,fn,after){
   if(typeof renderAll==="function") renderAll();
   return d;
   };
+  if(pend.retr&&pend.retr.length&&typeof retrLiveRelay==="function") retrLiveRelay(pend);   // 🃏 RETRLIVE: pass R — after the snapshot, before the run's own step (a sweep packs around the new cards)
   // 🔁 RELAY3: a step written as fn(fin) is asynchronous (the subject re-lays take their own lock and read the server) —
   // it finishes when it calls fin; a plain step finishes at once. A fin that never comes (a re-lay that died) is closed
   // after 45 s so the log line and the lock never hang.
@@ -49995,6 +50190,84 @@ function haBuildUnitInsight(kid,u){
     activities.push(spec); });
   return { unitId:u.id,title:u.title,emoji:u.emoji||"📘",days:nbUnitDays(kid,u.id),learning,learned,next:next.slice(0,6),extras,extrasTitle,activity:activities[0]||null,activities };
 }
+// UNITWEEK_START — 🧾 "This week we will…" on the kids' weekly unit notebook page (PLAN_unit_sheet_2026-11-19.md §4.1, §5 row 1;
+// her "Yes, build it" 2026-11-19 after seeing the picture). A beta mom's ask: the sheet that goes with a unit should gather
+// the things — the books, video clips, activities — "for in their notebooks". The insert read only one deck of cards; this block
+// hands it one more record, ins.week = {rows:[{dn, label, chips[]}], more}, one row per unit day laid on this kid's TARGET week,
+// in weekday order: "Mon" · "Day 3 — the title" · 📚 the book · ▶ video · 🎨 each activity · ✂️ craft · 🍎 snack · 🎲 game.
+//   · Which day a card is = utDayForTask, the same question Today's card (dcDayHTML) and the Sunday list ask. A notebook printed for
+//     a PARKED next week (nbWeekOverride) can't ask it as-is for a family card: utDayForTask dates the card from DAY_DT, the ACTIVE
+//     week, so a Monday card next week would read this Monday's lesson. Such a card asks the family lesson map for its own date
+//     (the parked week's dates) and hands that label to utDayForFam — the same two steps utDayForTask takes. A kid's own unit
+//     subject needs no date (its lesson id says the day). A card whose day can't be found is left off; no day found = no list.
+//   · A day's activities: the one the day's notebook activity names (nb.activity, what Today's card shows) + every activity whose
+//     `day` is that day's number (the gatherer rule, plan §4.0).
+//   · Never on the page: a web address (a video is just "▶ video"), a supply (Mom's or the kids'), a document, a rung question, the
+//     words, a card's definition — nothing the child must produce.
+//   · A unit with days this week but no card in learning / learned / next (or no deck at all) gets a bare insert so its page prints
+//     (notebooks.js UNITWEEK: the list, then a "My page" box). Not on the schedule, or no unit day this week → no record at all, and
+//     the notebook is main's byte for byte.
+// Read-only: nothing here writes, and no database call — it reads the week's tasks haNbContext already holds.
+const UW_DN=["monday","tuesday","wednesday","thursday","friday","saturday","sunday"], UW_MAX=5;
+// "November 23" (a week's meta date) → "2026-11-23". The year is this year's, or next year's when that lands closer (a week parked
+// in late December that starts in January).
+function uwISO(s){
+  const now=new Date(), iso=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  let d=new Date(String(s||"")+", "+now.getFullYear()); if(isNaN(d.getTime())) return "";
+  if(d.getTime()<now.getTime()-180*864e5){ const n=new Date(String(s)+", "+(now.getFullYear()+1)); if(!isNaN(n.getTime())) d=n; }
+  return iso(d);
+}
+// The unit day one card of the target week points at — {uid, …day} — or null.
+function uwDayFor(t,dates){
+  if(!t) return null;
+  if(t.famBlock&&dates&&dates[t.day]&&typeof routineDateISO==="function"){
+    const ds=uwISO(dates[t.day]);
+    if(ds&&ds!==routineDateISO(t.day)){   // a parked week: the card's own date, not the active week's
+      const b=(typeof famDefs==="function")?famDefs()[t.famBlock]:null; const it=(b&&typeof famList==="function")?famList(b.items).find(x=>x&&x.key===t.famItem):null; if(!it) return null;
+      let lbl=""; try{ lbl=(typeof famLessonMap==="function")?(famLessonMap(b,t.famBlock,it).byDate||{})[ds]||"":""; }catch(e){ lbl=""; }
+      return (lbl&&typeof utDayForFam==="function")?utDayForFam(t.famBlock,it,ds,lbl):null;
+    }
+  }
+  return (typeof utDayForTask==="function")?utDayForTask(t):null;
+}
+// One day's chips: names only, never an address.
+function uwChips(u,d){
+  const out=[], s=v=>String(v==null?"":v).trim();
+  (((d.res||{}).books)||[]).forEach(b=>{ if(b&&s(b.title)) out.push("\u{1F4DA} "+s(b.title)); });
+  if((((d.res||{}).links)||[]).some(l=>l&&l.kind==="video")) out.push("▶ video");
+  const acts=(typeof _unitActs==="function")?_unitActs(u):[], seen={};
+  acts.filter(a=>a&&a.key&&((d.nb&&d.nb.activity===a.key)||(d.n&&utInt(a.day)===d.n))).forEach(a=>{ if(seen[a.key]||!s(a.title)) return; seen[a.key]=1; out.push((s(a.emoji)||"\u{1F3A8}")+" "+s(a.title)); });
+  const cr=d.craft||d._unitCraft; if(cr) out.push("✂️ "+(s(cr.title)||"craft"));
+  if(d.snack) out.push("\u{1F34E} "+(s(d.snack.title)||"snack"));
+  if(d.game) out.push("\u{1F3B2} "+(s(d.game.title)||"game"));
+  return out;
+}
+// This kid's week of one unit → {rows, more}, or null when no card this week points at one of its days.
+function uwWeekOf(kid,u,tasks,dates){
+  if(!u||!u.id||!(typeof utHasDays==="function"&&utHasDays(u))) return null;
+  const hits=[], seen={};
+  (tasks||[]).filter(t=>t&&t.who===kid&&UW_DN.indexOf(t.day)>=0).slice().sort((a,b)=>(UW_DN.indexOf(a.day)-UW_DN.indexOf(b.day))||((typeof toMin==="function")?(toMin(a.time)-toMin(b.time)):0)).forEach(t=>{
+    let r=null; try{ r=uwDayFor(t,dates); }catch(e){ r=null; }
+    if(!r||r.uid!==u.id||r.off||seen[r.id]) return; seen[r.id]=1; hits.push({t:t,d:r}); });
+  if(!hits.length) return null;
+  const rows=hits.slice(0,UW_MAX).map(h=>{ const d=h.d, head=d.n?"Day "+d.n:(d.role||(d.wk?"Week "+d.wk:""));
+    return {dn:h.t.day.charAt(0).toUpperCase()+h.t.day.slice(1,3),label:[head,d.t||""].filter(Boolean).join(" — "),chips:uwChips(u,d)}; });
+  return {rows:rows,more:hits.length-rows.length};
+}
+// Called from haNbContext with the kid's built inserts: each unit with days this week gets ins.week; a unit with days this week
+// but no insert (no deck) gets a bare one. Nothing this week → the same array, untouched.
+function uwAttach(kid,units,tasks,dates){
+  units=units||[]; let add=false; const out=[];
+  ((typeof haKidUnits==="function")?haKidUnits(kid):[]).filter(u=>u&&u.nbInsert!==false).forEach(u=>{
+    const ins=units.find(x=>x&&x.unitId===u.id); const wk=uwWeekOf(kid,u,tasks,dates);
+    if(ins){ if(wk) ins.week=wk; out.push(ins); return; }
+    if(!wk) return; add=true;
+    out.push({unitId:u.id,title:u.title,emoji:u.emoji||"\u{1F4D8}",days:(typeof nbUnitDays==="function")?nbUnitDays(kid,u.id):{},learning:[],learned:[],next:[],extras:[],extrasTitle:"",activity:null,activities:[],week:wk}); });
+  if(!add) return units;
+  units.forEach(x=>{ if(out.indexOf(x)<0) out.push(x); });   // an insert not in the kid's list (none today) stays, at the end
+  return out;
+}
+// UNITWEEK_END
 // In-app status page(s) for every unit a kid is enrolled in.
 // Notebook tab shows a status card per enrolled unit — but only for units set to go to the
 // notebook (nbInsert !== false). A unit shelved from notebooks (Units tab toggle off) drops
@@ -52458,7 +52731,7 @@ function unitStageMoveUp(unitId,kid,book){
     if(!confirm(cap(kid)+" isn\u2019t ready yet ("+(st.on||0)+" of "+(st.need||st.total)+" on the ladder). Start "+st.next.label+" anyway? "+_cur+" keeps going too.")) return; }
   const ks=u.kidStage[kid]; const sub=book?book:ks.subject;   // UNITMOVEBOOK: the book Mom picked (same book = today's move-up)
   const w=_ustApply(u,kid,st.next.n,"",sub,ks.map); if(!w) return;
-  const rec={stage:st.next.n,knows:"",subject:sub||"",map:(w.gate?ks.map:"")||"",ts:Date.now(),from:ks.stage};
+  const rec=Object.assign(_unbKeep(ks),{stage:st.next.n,knows:"",subject:sub||"",map:(w.gate?ks.map:"")||"",ts:Date.now(),from:ks.stage});   // UNITNEXTBOOK: the kid's settings ride along
   unitMoveForm=null; _ustWrite(unitId,kid,w,rec); _ustDone(unitId,kid,rec);
 }
 // UNITMOVEBOOK_START — her "yes" 2026-11-19 (beta family: a kid finished his Level 1 spelling book; his Level 2 book is a NEW
@@ -52485,6 +52758,72 @@ function _umbHtml(u,k,ks,next,sel,btn,esc,subjName){
   return h+'</div>';
 }
 // UNITMOVEBOOK_END
+// UNITNEXTBOOK_START — her ask 2026-11-19: "i would like it to link up with the lessons for the spelling test and it should
+// recognize new book new level in the units" (design approved the same day: Units shows the new book and offers ONE Mom tap
+// to start the next level; practice and test settings carry over; not automatic). Beta family: a kid finished his Level 1
+// spelling book and his Level 2 book was added as a NEW subject; the unit stayed on Level 1 with the finished book linked,
+// so the Level 2 lesson cards got no spelling test and his practice words stayed on Level 1.
+// 1. The offer. On a unit whose cards follow the kid's book (cardLessons), Mom sees on the kid's row "<Kid> finished <book>.
+//    <next book> is on the schedule — ➡ Start <next stage> with it" when ALL of: the kid has a next stage; every lesson of
+//    the linked book is done by the curriculum's own done record (lidDoneIdx — not card checks); and exactly ONE other
+//    subject of the kid's is clearly the next level's book — its lessons name that level ("L2-7", stParseLesson), or, when
+//    its lessons carry no level, its key or name is the linked book's with the next stage's number ("…_1" → "…_2"). It must
+//    still have lessons to do and not be paused. A book linked to any unit is never offered. None or several → no line
+//    (➡ and "Which book?" stay as they are). The tap = "Which book?" → Start with that book picked: the same "isn't ready
+//    yet" question, the same writes. Nothing happens without the tap; a kid's screen shows nothing new.
+// 2. The move keeps the kid's settings. _ustWrite .set()s the whole kidStage record and the move-up's record carried only
+//    stage/knows/subject/map, so every ➡ wiped practice (which card carries word practice), testRight (where a ✓ word
+//    lands), path (Practice Week / Test First), the notebook options (nbWords, nbPractice) and the check-up line (checkup).
+//    Each is still right at the next stage, so every field the move doesn't set now rides along. knows resets as before (it
+//    names a family of the OLD stage), and map is decided as before (a book map belongs to one stage).
+const UNB_MOVE_SETS=["stage","knows","subject","map","ts","from"];
+function _unbKeep(ks){ const out={}; Object.keys(ks||{}).forEach(k=>{ if(UNB_MOVE_SETS.indexOf(k)<0&&ks[k]!=null) out[k]=ks[k]; }); return out; }
+function _unbSubj(kid,sk){ return ((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid]||{})[sk]||null; }
+// Every lesson on the book's list is done (done-by-id). Unstamped / empty list → unknown → false.
+function _unbFinished(kid,sk){
+  const s=_unbSubj(kid,sk), seq=(s&&s.lessonSeq)||[]; if(!seq.length||typeof lidDoneIdx!=="function") return false;
+  const done=lidDoneIdx(kid,sk); if(!done) return false;
+  for(let i=0;i<seq.length;i++) if(!done.has(i)) return false;
+  return true;
+}
+// "all_about_spelling_2" / "All About Spelling 2" / "AAS 4" → {stem, n}; no trailing number → null.
+function _unbStem(t){ const m=/^(.*\D)\s*(\d+)$/.exec(String(t==null?"":t).toLowerCase().replace(/[^a-z0-9]+/g," ").trim()); return m&&m[1].trim()?{stem:m[1].trim(),n:+m[2]}:null; }
+function _unbIsNext(sk,s,linkedSk,linked,n){
+  const lv=new Set(); (s.lessonSeq||[]).forEach(t=>{ const p=(typeof stParseLesson==="function")?stParseLesson(t):null; if(p&&p.level!=null) lv.add(p.level); });
+  if(lv.size) return lv.size===1&&lv.has(n);   // its lessons say which level
+  const mine=[sk,s.display].map(_unbStem).filter(Boolean), theirs=[linkedSk,linked&&linked.display].map(_unbStem).filter(Boolean);
+  return mine.some(a=>a.n===n&&theirs.some(b=>b.stem===a.stem));
+}
+// {sk, from, next} when the offer shows, else null.
+function unitNextBook(u,kid){
+  try{
+    if(!u||!u.cardLessons) return null; const ks=((u.kidStage||{})[kid])||null; if(!ks||!ks.subject) return null;
+    const st=unitStageStatus(u,kid); if(!st||!st.next) return null;
+    if(!_unbFinished(kid,ks.subject)) return null;
+    const linked=new Set(); const us=(typeof unitStudies!=="undefined"&&unitStudies)||{};
+    Object.keys(us).forEach(id=>{ const x=((((us[id]||{}).kidStage)||{})[kid]||{}).subject; if(x) linked.add(x); });
+    const subs=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid])||{};
+    const hits=Object.keys(subs).filter(sk=>{ const s=subs[sk];
+      if(!s||linked.has(sk)||s.paused||!(s.lessonSeq||[]).length||_unbFinished(kid,sk)) return false;
+      return _unbIsNext(sk,s,ks.subject,subs[ks.subject],st.next.n); });
+    return hits.length===1?{sk:hits[0],from:ks.subject,next:st.next}:null;
+  }catch(e){ return null; }
+}
+function unitNextBookHtml(u,k,btn,esc,subjName){
+  if(typeof momHere!=="function"||!momHere()) return "";
+  if(unitMoveForm&&unitMoveForm.unitId===u.id&&unitMoveForm.kid===k) return "";   // "Which book?" is open — it says the same
+  const nb=unitNextBook(u,k); if(!nb) return "";
+  const lbl=nb.next.label||("Stage "+nb.next.n);
+  return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;padding:7px 10px;border-radius:10px;background:#f0fdf4;border:1.5px solid #bbf7d0">'
+    +'<span style="font-size:11.5px;color:#14532d;font-weight:700;line-height:1.4">'+esc(cap(k))+' finished '+esc(subjName(k,nb.from))+'. '+esc(subjName(k,nb.sk))+' is on the schedule —</span>'
+    +'<button onclick="unitNextBookGo(\''+esc(u.id)+'\',\''+esc(k)+'\')" style="'+btn("#2d6a4f","#fff","#2d6a4f")+'">➡ Start '+esc(lbl)+' with it</button></div>';
+}
+// The tap re-checks (the page may be old) and goes through ➡ with the book picked.
+function unitNextBookGo(unitId,kid){
+  if(typeof momHere!=="function"||!momHere()) return; const u=(unitStudies||{})[unitId]; const nb=unitNextBook(u,kid); if(!nb) return;
+  unitStageMoveUp(unitId,kid,nb.sk);
+}
+// UNITNEXTBOOK_END
 function _unitStageRowsHtml(u,roster){
   const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
   const sel='padding:5px 8px;border-radius:8px;border:1.5px solid var(--border);font-size:11.5px;font-family:\'DM Sans\',sans-serif;background:#fff;max-width:100%';
@@ -52505,6 +52844,7 @@ function _unitStageRowsHtml(u,roster){
       if(st.next) h+='<button onclick="unitStageMoveUp(\''+esc(u.id)+'\',\''+esc(k)+'\')" style="margin-left:auto;'+(st.ready?btn("#2d6a4f","#fff","#2d6a4f"):btn("#fff","#2d6a4f","var(--border)"))+'">➡ Start Stage '+st.next.n+': '+esc(st.next.label)+'</button>';
       h+='</div>';
       h+=_umbHtml(u,k,ks,st.next,sel,btn,esc,subjName);   // UNITMOVEBOOK: "Which book?"
+      h+=unitNextBookHtml(u,k,btn,esc,subjName);   // UNITNEXTBOOK: finished the book → the next level's book, one tap
       if(typeof mastCountEmoji==="function"&&(u.decks||[]).some(d=>d&&d.key==="Counting")){ const ce=mastCountEmoji(k);
         h+='<div style="display:flex;align-items:center;gap:3px;flex-wrap:wrap;margin-top:5px"><span style="font-size:10.5px;color:var(--muted);font-weight:700;margin-right:4px">Counts</span>';
         MAST_COUNT_PICS.forEach(p=>{ const on=p[0]===ce; h+='<button title="'+p[1]+'" onclick="mastSetCountEmoji(\''+esc(k)+'\',\''+p[0]+'\')" style="width:28px;height:28px;padding:0;border-radius:8px;border:1.5px solid '+(on?'#2d6a4f':'transparent')+';background:'+(on?'#f2faf5':'transparent')+';font-size:16px;cursor:pointer;line-height:1">'+p[0]+'</button>'; });
@@ -60733,6 +61073,83 @@ function ctMoreHTML(items){
   return h+'</div>';
 }
 // CURRTOOLS_END
+// DRILLROWS_START — card practice (the Retrieval Plan) listed with the every-day subjects on the child's Curriculum Grid (her
+// words 2026-11-19: "it should be with the daily subjects in curriculum and it should list like calebs… it needs to be
+// uniform"; look-only, slice 1 of DESIGN_drill_rows_curriculum_2026-11-19.md). One line per kind that will really make a card
+// this week, read through the week builder's OWN filter (retrOn → retrDayKinds, both rows, RETRFAM's no-ladder rule) — never
+// re-derived. Title from RETR_SLOT_TITLE (the card's own words), minutes from retrSlotMinutes, with Mom / on their own from
+// retrSlotMom, so the line, the Min column and the card agree. A kind saved in the plan that the builder drops for this child
+// (Sprint with no ladder) shows greyed. Nothing here writes: a tap only opens Mastery ▸ Settings ▸ 🔁 Retrieval Plan on
+// this child. A child with no line that runs and no old-style drills* subject gets one dashed "set it up" chip.
+const DR_KINDS=["drill","match","sprint","recheck"];   // fixed order: Daily Drill, Match & Play, Sprint, Sprint Re-checks
+const DR_DAY_SHORT={mon:"Mon",tue:"Tue",wed:"Wed",thu:"Thu",fri:"Fri"};
+// Pure: on = {mon:[kinds the builder makes that day]…}, saved = {mon:[kinds stored that day]…} → rows in the fixed order.
+function drRowsFrom(on,saved){
+  const days=(typeof RETR_DAYS!=="undefined")?RETR_DAYS:["mon","tue","wed","thu","fri"];
+  const out=[];
+  DR_KINDS.forEach(function(k){
+    const onD=days.filter(function(d){ return ((on||{})[d]||[]).indexOf(k)>=0; });
+    if(onD.length){ out.push({kind:k,days:onD,ok:true}); return; }
+    const sv=days.filter(function(d){ return ((saved||{})[d]||[]).indexOf(k)>=0; });
+    if(sv.length) out.push({kind:k,days:sv,ok:false});   // saved, but the builder makes no card for it
+  });
+  return out;
+}
+// The plan as the week builder reads it (gwInjectRetrieval: retrOn gate, then retrDayKinds per day). The greyed side reads
+// only what is SAVED for this child (week / week2) — the code's built-in starting days are never shown as "can't run".
+function drPlanFor(kid){
+  const on={}, saved={};
+  if(typeof RETR_DAYS==="undefined"||typeof retrDayKinds!=="function") return {on:on,saved:saved};
+  const live=(typeof retrOn==="function")?retrOn(kid):true;
+  const rp=((typeof masteryData!=="undefined"&&masteryData&&masteryData.retrievalPlan)||{})[kid]||{};
+  const w1=(rp.week&&typeof rp.week==="object")?rp.week:{}, w2=(rp.week2&&typeof rp.week2==="object")?rp.week2:{};
+  RETR_DAYS.forEach(function(d){
+    on[d]=live?retrDayKinds(kid,d):[];
+    saved[d]=[w1[d],w2[d]].filter(function(k){ return k&&k!=="off"; });
+  });
+  return {on:on,saved:saved};
+}
+function drRows(kid){
+  const p=drPlanFor(kid);
+  return drRowsFrom(p.on,p.saved).map(function(r){
+    const t=(typeof RETR_SLOT_TITLE!=="undefined"&&RETR_SLOT_TITLE[r.kind])||r.kind;
+    return {kind:r.kind,ok:r.ok,title:t,days:r.days,dayText:r.days.map(function(d){ return DR_DAY_SHORT[d]||d; }).join(" "),
+      min:(typeof retrSlotMinutes==="function")?retrSlotMinutes(kid,r.kind):null,
+      mom:((typeof retrSlotMom==="function")?retrSlotMom(r.kind):"required")==="none"?"on their own":"with Mom"};
+  });
+}
+// An old-style every-day "Drills" subject (the key test taskDeepLinkView already uses) — the child has practice already.
+function drHasOldDrills(kid){
+  const subs=((typeof currData!=="undefined"&&currData&&currData.subjects)||{})[kid]||{};
+  return Object.keys(subs).some(function(sk){ return !!subs[sk]&&/^drills(_|$)/.test(sk); });
+}
+function drLineText(r,name){
+  if(!r.ok) return r.title+" · "+r.dayText+" — can’t run for "+name+" yet →";
+  return r.title+" · "+r.dayText+(r.min!=null?" · "+r.min+" min":"")+" · "+r.mom+" →";
+}
+// The chips that go after the every-day subject chips in the purple strip ("" when there is nothing to show).
+function drStripChips(kid){
+  let rows=[]; try{ rows=drRows(kid); }catch(e){ rows=[]; }
+  const name=(typeof cap==="function")?cap(kid):kid, nm=esc(name), arg=String(kid).replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+  const go='drGo(\''+esc(arg)+'\')';
+  const base='margin:2px 4px 2px 0;padding:3px 10px;border-radius:12px;background:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;max-width:100%;text-align:left;white-space:normal;';
+  let h='';
+  rows.forEach(function(r){
+    h+='<button class="dr-row" onclick="'+go+'" title="'+(r.ok?'Card practice — tap to see or change the days':'This kind makes no card for '+nm+' — tap to change the plan')+'" style="'+base+'border:1px solid #c4b5fd;color:'+(r.ok?'#6d28d9':'#9ca3af')+'">'+esc(drLineText(r,name))+'</button>';
+  });
+  if(!rows.some(function(r){ return r.ok; })&&!drHasOldDrills(kid))
+    h+='<button class="dr-empty" onclick="'+go+'" style="'+base+'border:1.5px dashed #a78bfa;color:#6d28d9">＋ \u{1F0CF} Flash-card practice isn’t on '+nm+'’s week yet — set it up</button>';
+  return h;
+}
+// Tap → Mom's Day ▸ School ▸ Mastery ▸ Settings ▸ 🔁 Retrieval Plan, this child picked (the same kid switch as mhqSetKid; the
+// panel follows masteryKid, which renderMasteryHQ keeps on mhqKid). Navigation only.
+function drGo(kid){
+  mhqKid=kid; mhqView="retr"; mhqDeck=null;
+  if(typeof mhqSessEdit!=="undefined"){ mhqSessEdit=null; mhqSessForm=null; mhqSessErr=""; }
+  if(typeof mastAdminLocal!=="undefined") mastAdminLocal=null;
+  mpSchoolOpen('mhq');
+}
+// DRILLROWS_END
 function renderCurrGrid(el){
   if(!currData||!currData.subjects){
     el.innerHTML+='<div style="padding:40px 20px;text-align:center;color:var(--muted)"><div style="font-size:36px;margin-bottom:8px">\u{1F4CA}</div><div style="font-weight:600;margin-bottom:4px">No curriculum yet</div><div style="font-size:12px">Upload an Excel file or build subjects first.</div></div>';
@@ -60803,12 +61220,13 @@ function renderCurrGrid(el){
   // Chief, 2026-09-15). It rests in the ⏸ strip like any paused subject, one tap from its card.
   Object.keys(_lnCols).forEach(function(ck){ (_lnCols[ck].members||[]).forEach(function(m){ if((subs[m]||{}).paused&&!(subs[m]||{}).pausedFor&&(subs[m]||{}).tracking!=="daily"&&_pausedSks.indexOf(m)<0) _pausedSks.push(m); }); });
   const _other=_otherAll.filter(function(sk){ return _pausedSks.indexOf(sk)<0; });
-  const _otherHtml=_other.length
+  const _drChips=(typeof drStripChips==="function")?drStripChips(gvKid):"";   // DRILLROWS: card-practice lines / the empty-state chip — the strip now draws for these too
+  const _otherHtml=(_other.length||_drChips)
     ?'<div style="background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:10px;padding:8px 12px;margin:0 0 8px">'
       +'<span style="font-size:11px;color:#5b21b6;font-weight:700">🗂 '+cw("noLessons")+' — tap to open the card: </span>'
       +_other.map(sk=>{ const _s=subs[sk]||{}, _pz=!!_s.paused;
         return '<button onclick="ceOpenEdit(\''+gvKid+'\',\''+sk+'\')" style="margin:2px 4px 2px 0;padding:3px 10px;border-radius:12px;border:1px solid #c4b5fd;background:#fff;color:'+(_pz?'#9ca3af':'#6d28d9')+';font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(_pz?'⏸ ':'')+esc(_s.display||sk)+' →</button>';
-      }).join('')
+      }).join('')+_drChips
       +'<span style="font-size:10px;color:#7c3aed;display:block;margin-top:2px">Notebooks, drills, reading and anything daily — they still schedule, they just have no lessons to lay out.</span></div>'
     :'';
   const _pausedHtml=_pausedSks.length
@@ -84887,12 +85305,14 @@ function retrAdminNum(key,val){
   const v=String(val).trim();
   if(v==="") delete retrAdminLocal.settings[key];
   else { const n=parseFloat(v); if(!isNaN(n)) retrAdminLocal.settings[key]=n; }
+  retrAdminSave({quiet:true});   // 💾 RETRSAVE: saves at once, no repaint (the box keeps its focus)
 }
 function retrAdminLadder(val){
   if(!retrAdminLocal||retrAdminLocal.kid!==masteryKid) retrAdminInit();
   const arr=String(val).split(/[,\s]+/).map(x=>parseInt(x,10)).filter(x=>x>0);
   if(arr.length) retrAdminLocal.settings.recheck_ladder=arr;
   else delete retrAdminLocal.settings.recheck_ladder;
+  retrAdminSave({quiet:true});   // 💾 RETRSAVE
 }
 function retrAdminToggle(key,a,b){
   if(!retrAdminLocal||retrAdminLocal.kid!==masteryKid) retrAdminInit();
@@ -84900,7 +85320,7 @@ function retrAdminToggle(key,a,b){
   if(cur===undefined) retrAdminLocal.settings[key]=a;         // inherit -> a
   else if(cur===a) retrAdminLocal.settings[key]=b;            // a -> b
   else delete retrAdminLocal.settings[key];                    // b -> inherit
-  _mastRe();
+  retrAdminSave();   // 💾 RETRSAVE: saves, then the one repaint
 }
 function retrAdminCycleDay(day,row){
   if(!retrAdminLocal||retrAdminLocal.kid!==masteryKid) retrAdminInit();
@@ -84908,24 +85328,60 @@ function retrAdminCycleDay(day,row){
   const map=(row===2)?retrAdminLocal.week2:retrAdminLocal.week;
   const cur=map[day]||"off";
   map[day]=RETR_DAY_KINDS[(RETR_DAY_KINDS.indexOf(cur)+1)%RETR_DAY_KINDS.length];
-  _mastRe();
+  retrAdminSave({rhythm:true});   // 💾 RETRSAVE: saves this tap; the live week follows once the tapping settles (RETRLIVE)
 }
-function retrAdminSave(){
-  if(!retrAdminLocal) return;
+// RETRSAVE_START — 💾 the Retrieval Plan saves by itself (her ask 2026-11-19: "could we just auto save to avoid this"). Live: a
+// family mom tapped two kids' Weekly rhythm days; one kid's days never reached the database because "Save Retrieval Plan" was
+// missed. Now every day tap (Row 1 / Row 2), number box, re-check ladder box and toggle saves at once for the kid on screen —
+// the same payload the button wrote (settings, the whole week row as shown, week2 with off / same-as-Row-1 days dropped), the
+// same targeted update() at mastery/retrievalPlan/<kid>, the same wrong-kid guard. The editor state is KEPT after a save (the
+// button used to null it and re-read the stored plan): re-reading would turn a Row 2 day that matches Row 1 back to off
+// mid-cycle and flip the shown days. A number box saves without a repaint, so it keeps its focus. "Saved ✓" shows by the
+// rhythm. o.rhythm = a day tap → the live week follows (RETRLIVE, once the tapping settles). Test: test_retr_autosave.js.
+let retrAdminSavedKid=null;
+function retrAdminSave(o){
+  o=o||{};
+  if(!retrAdminLocal) return false;
   // Belt and braces: never write one kid's editor state onto another, whatever the UI did.
-  if(retrAdminLocal.kid&&retrAdminLocal.kid!==masteryKid){ retrAdminInit(); _mastRe(); return; }
+  if(retrAdminLocal.kid&&retrAdminLocal.kid!==masteryKid){ retrAdminInit(); _mastRe(); return false; }
   const kid=masteryKid;
+  // the whole row as shown — a day with nothing on it is stored as "off", so one tap never leaves the other days to the defaults
+  const w1={}; RETR_DAYS.forEach(d=>{ w1[d]=retrAdminLocal.week[d]||"off"; });
   // Row 2 keeps only real extras: off / same-as-Row-1 days are dropped (the generator
   // would collapse them anyway); an emptied Row 2 saves as {} which clears the node.
-  const w2={}; RETR_DAYS.forEach(d=>{ const k=(retrAdminLocal.week2||{})[d]; if(k&&k!=="off"&&k!==retrAdminLocal.week[d]) w2[d]=k; });
-  const payload={settings:retrAdminLocal.settings,week:retrAdminLocal.week,week2:w2};
-  if(!masteryData.retrievalPlan) masteryData.retrievalPlan={};
-  masteryData.retrievalPlan[kid]=payload;
-  if(db) db.ref("mastery/retrievalPlan/"+kid).update(payload);
-  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
-  retrAdminLocal=null;
-  _mastRe();
+  const w2={}; RETR_DAYS.forEach(d=>{ const k=(retrAdminLocal.week2||{})[d]; if(k&&k!=="off"&&k!==w1[d]) w2[d]=k; });
+  const payload={settings:JSON.parse(JSON.stringify(retrAdminLocal.settings||{})),week:w1,week2:w2};
+  if(!drPlanWrite(kid,payload,{rhythm:o.rhythm})) return false;   // 🃏 DRILLSAVE: the one plan write, told the kid
+  retrAdminSavedKid=kid;
+  if(o.quiet){ try{ const el=(typeof document!=="undefined")?document.getElementById("retrAdminSaved"):null; if(el) el.innerHTML=retrAdminSavedHtml(kid); }catch(e){} }
+  else _mastRe();
+  return true;
 }
+function retrAdminSavedHtml(kid){
+  if(retrAdminSavedKid!==kid) return 'changes save by themselves';
+  return '<b style="color:#15803d">Saved ✓</b>'+((typeof retrLivePending==="function"&&retrLivePending(kid))?' · this week’s cards update in a moment':'');
+}
+// DRILLSAVE_START — 🃏 one drill-plan write that is told which child (her yes 2026-11-20 to slice 2 of
+// DESIGN_drill_rows_curriculum_2026-11-19.md: "the plan write becomes one function that takes the child"). The Mastery panel's
+// save was welded to "whoever Mastery is showing"; the Curriculum rows (a later slice) need to save a named child. Nothing on
+// screen changes: retrAdminSave builds the same payload and hands it here. This does only the storage part — the local mirror
+// (Object.assign keeps the kid's other keys, as update() does), the targeted update() at mastery/retrievalPlan/<kid> only when
+// db && !_dryRun(), the ha_mastery copy, and the live-week pass (retrLiveQueue) when o.rhythm. It writes only the keys it is
+// handed (a caller may pass week/week2 without settings), never a whole-node set(), and refuses a missing kid (an empty kid
+// would have updated mastery/retrievalPlan itself). Test: test_drill_plan_write.js.
+function drPlanWrite(kid,payload,o){
+  o=o||{};
+  if(!kid||typeof kid!=="string"||/[.#$\[\]\/]/.test(kid)) return false;
+  if(!payload||typeof payload!=="object"||Array.isArray(payload)||!Object.keys(payload).length) return false;
+  if(!masteryData.retrievalPlan) masteryData.retrievalPlan={};
+  masteryData.retrievalPlan[kid]=Object.assign({},masteryData.retrievalPlan[kid]||{},JSON.parse(JSON.stringify(payload)));   // update() keeps the kid's other keys — the mirror does too
+  if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref("mastery/retrievalPlan/"+kid).update(payload);
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  if(o.rhythm&&typeof retrLiveQueue==="function") retrLiveQueue(kid);
+  return true;
+}
+// DRILLSAVE_END
+// RETRSAVE_END
 function retrAdminReset(){
   if(!confirm("Reset "+SL_KLBL[masteryKid]+"'s retrieval plan to the built-in defaults?")) return;
   const kid=masteryKid;
@@ -84933,6 +85389,7 @@ function retrAdminReset(){
   if(db) db.ref("mastery/retrievalPlan/"+kid).remove();
   try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   retrAdminLocal=null;
+  if(typeof retrLiveQueue==="function") retrLiveQueue(kid);   // 🃏 RETRLIVE: back to the built-in rhythm — this week's cards follow too
   _mastRe();
 }
 function retrAdminHtml(){
@@ -84973,7 +85430,8 @@ function retrAdminHtml(){
   h+='<div class="mast-edit-row"><span class="mast-edit-label">Match suggestion'+(mr!==undefined?' <span style="font-size:8px;font-weight:800;color:#b45309">SET</span>':'')+'</span>'
     +'<button onclick="retrAdminToggle(\'match_rotation\',\'manual\',\'heatmap\')" style="padding:6px 12px;border-radius:8px;border:1.5px solid var(--border);background:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'
     +(mrShow==="heatmap"?"heat-map (worst deck)":"manual (off)")+'</button></div>';
-  h+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#78716c;margin:12px 0 6px">Weekly rhythm — tap a day to cycle</div>';
+  h+='<div style="display:flex;align-items:baseline;gap:8px;margin:12px 0 6px"><span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#78716c">Weekly rhythm — tap a day to cycle</span>'
+    +'<span id="retrAdminSaved" style="flex:1;text-align:right;font-size:10.5px;color:var(--muted)">'+retrAdminSavedHtml(kid)+'</span></div>';   // 💾 RETRSAVE
   h+='<div style="display:flex;gap:5px">';
   RETR_DAYS.forEach(d=>{
     const k=retrAdminLocal.week[d]||"off";
@@ -84993,8 +85451,7 @@ function retrAdminHtml(){
       +'<div style="font-size:8.5px;font-weight:700;color:#57534e">'+k+'</div></button>';
   });
   h+='</div>';
-  h+='<div style="display:flex;gap:8px;margin-top:12px">';
-  h+='<button class="mast-edit-save" style="flex:1" onclick="retrAdminSave()">Save Retrieval Plan</button>';
+  h+='<div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">';   // 💾 RETRSAVE: no Save button — every change saves itself
   h+='<button onclick="retrAdminReset()" style="padding:8px 14px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-size:11px;font-weight:700;cursor:pointer;color:#b5394a;font-family:\'DM Sans\',sans-serif">Reset</button>';
   h+='</div></div></div>';
   return h;
@@ -85679,8 +86136,32 @@ const MS_SHEETS=[{k:"a1",l:"A · 1st half",goal:"Standard: at least half the pro
   {k:"b2",l:"B · 2nd half",goal:"Honors: at least a third done in 60 s, 70% of those right"}];
 function msTodayISO(){ try{ return (typeof cbTodayISO==="function")?cbTodayISO():new Date().toISOString().slice(0,10); }catch(e){ return new Date().toISOString().slice(0,10); } }
 function msBookMeta(id){ return MS_BOOKS.find(b=>b.id===id)||null; }
+// SCANLAZY_START — 🔢 Book Sprints read ONE book's lesson list, library/scans/<book> (~2 KB), when a sprint list is first read,
+// instead of all of library/scans (69 scans, ~108 KB) at every start (her "Yes, start 3a" 2026-11-19; REPORT_phone_battery_2026-11-09.md
+// step 3a). The listener stays on, so an edit from another device still arrives. Old boot listener: lbScansMS=whole node, _mastRe on Mastery.
+const _msScanOn={};
+function msScanReady(bookId){ const w=_msScanOn[String(bookId||"")]; return !!(w&&w.ready); }
+function msScanEnsure(bookId){
+  bookId=String(bookId||"");
+  if(!/^[A-Za-z0-9_-]{1,64}$/.test(bookId)||typeof db==="undefined"||!db) return Promise.resolve();
+  let w=_msScanOn[bookId]; if(w) return w.p;
+  w=_msScanOn[bookId]={ready:false,p:null};
+  w.p=new Promise(function(res){
+    try{
+      db.ref("library/scans/"+bookId).on("value",function(s){
+        const v=s.val(); if(v) lbScansMS[bookId]=v; else delete lbScansMS[bookId];
+        const first=!w.ready; w.ready=true; res();
+        if((tab==="mastery"||tab==="kids")&&typeof _mastRe==="function") _mastRe();
+        else if(first&&typeof renderAllSoon==="function") renderAllSoon();
+      },function(){ w.ready=true; res(); });
+    }catch(e){ w.ready=true; res(); }   // never take a render down with it
+  });
+  return w.p;
+}
+// SCANLAZY_END
 // → [{n,title}] from the library list "Sprint 407 · Title (p. 43)"; a missing title becomes "Sprint 407"
 function msBookList(bookId){
+  msScanEnsure(bookId);   // SCANLAZY
   const sc=(lbScansMS||{})[bookId]; const L=(sc&&Array.isArray(sc.lessons))?sc.lessons:[]; const out=[];
   L.forEach(x=>{ const m=/Sprint\s+(\d+)\s*(?:·|:|-|—)?\s*(.*)$/i.exec(String(x||"").trim()); if(m) out.push({n:+m[1],title:String(m[2]||"").replace(/\s*\(p\.[^)]*\)\s*$/,"").trim()}); });
   return out.sort((a,b)=>a.n-b.n);
@@ -85726,6 +86207,7 @@ function msTodayRuns(kid){ const st=msState(kid); if(!st||!st.log) return 0; con
 function msNextSprintN(kid,n){ const st=msState(kid); const L=msBookList(st.book); const i=L.findIndex(x=>x.n===n); return (i>=0&&i+1<L.length)?L[i+1].n:null; }
 function msSetPosition(kid,book,cur,why){
   if(!momHere()||!kid||!book) return;
+  if(!msScanReady(book)&&!(lbScansMS||{})[book]&&typeof db!=="undefined"&&db){ msScanEnsure(book).then(function(){ if(msScanReady(book)) msSetPosition(kid,book,cur,why); }); return; }   // SCANLAZY: a book not read yet loads first, so its first sprint is known (never cur:null)
   const st=(mathSprints[kid]=mathSprints[kid]||{}); const from={book:st.book||null,cur:st.cur||null};
   const L=msBookList(book); if(!cur||!L.some(x=>x.n===cur)) cur=(L[0]||{}).n||null;
   st.book=book; st.cur=cur; st.moves=st.moves||[]; const mv={at:Date.now(),ts:nowTs(),from:from,to:{book:book,cur:cur},why:why||"set by Mom"}; st.moves.push(mv);
@@ -91009,6 +91491,129 @@ function gwInjectRetrieval(allTasks,sortedDates,WDAY_MAP,skipSet,dates,dayOfYear
   });
 }
 // GWRETR_END
+// RETRLIVE_START — 🃏 a Retrieval Plan rhythm change reaches the live week by itself (her words 2026-11-19: "it needs to be live
+// and it is added to live week"). Live: a family mom saved a kid's Weekly rhythm and no 🃏 Daily Drill card showed — the cards
+// are made only when the week is built (gwInjectRetrieval), so a saved rhythm waited for the next build or 🔄 Regenerate.
+// Now, once Mom's tapping settles (RETR_LIVE_WAIT_MS after the last day tap, then the re-lay door's own 2 s wait), ONLY that
+// kid's retrieval cards on today and the later days of the active week are added or taken off, through the ONE RE-LAY DOOR
+// (relayWeek "retrieval" → its lock, its snapshot / diff, its what-moved line; a retrieval-only run skips the sweep, so nothing
+// else is re-laid). Each card is made exactly as the builder makes it (same id, title, detail, minutes, Mom, device, subject,
+// the same slot finder seRetrSlot inside that date's school day, the kid's Closing Notebook re-timed to stay last, no room →
+// the day's "Didn't fit today" box), so the next full build gives the same ids. Never on a day before today; today only while
+// the day is still open by the app's own rule (_rlwModeToday: before school, or mid-day from now). No card on a day the kid
+// has no other cards or is off. A day turned off / to another kind takes the old card off unless it is checked, claimed or its
+// Mom part is done. Mom only, never in ?dryrun=1, never from a listener (only her tap queues it — a kid's device re-reading the
+// plan never does), and the door's lock + this pass being a diff (a card already there is never added twice) keep two open
+// devices from doubling it. Test: test_retr_autosave.js.
+const RETR_LIVE_WAIT_MS=6000;
+const RETR_LIVE_DAYS=["monday","tuesday","wednesday","thursday","friday"];
+let _retrLivePend=[], _retrLiveTimer=null;
+function retrLivePending(kid){ return _retrLivePend.indexOf(kid)>=0; }
+function retrLiveQueue(kid){
+  if(!kid||(typeof momHere==="function"&&!momHere())) return false;
+  if(typeof _dryRun==="function"&&_dryRun()) return false;
+  if(_retrLivePend.indexOf(kid)<0) _retrLivePend.push(kid);
+  try{ clearTimeout(_retrLiveTimer); }catch(e){}
+  _retrLiveTimer=setTimeout(retrLiveFlush,RETR_LIVE_WAIT_MS);
+  return true;
+}
+function retrLiveFlush(){
+  try{ clearTimeout(_retrLiveTimer); }catch(e){}
+  _retrLiveTimer=null;
+  const kids=_retrLivePend.slice(); _retrLivePend=[];
+  if(!kids.length||typeof relayWeek!=="function") return;
+  if(typeof momHere==="function"&&!momHere()) return;
+  const nm=k=>((typeof SL_KLBL!=="undefined"&&SL_KLBL&&SL_KLBL[k])||(typeof cap==="function"?cap(k):k));
+  relayWeek("retrieval",{label:"\u{1F0CF} "+kids.map(nm).join(" & ")+" practice days",retr:kids});
+  try{ const el=(typeof document!=="undefined")?document.getElementById("retrAdminSaved"):null; if(el&&typeof retrAdminSavedHtml==="function"&&typeof masteryKid!=="undefined") el.innerHTML=retrAdminSavedHtml(masteryKid); }catch(e){}
+}
+// builder's own day number (generateWeek's dayOfYear) — the id has to be byte-identical to a full build's
+function retrLiveDoy(dt){ const jan1=new Date(dt.getFullYear(),0,0); return Math.floor((dt-jan1)/86400000); }
+function retrLiveId(kid,kind,iso){ const d=gwParseDate(iso); return d.getFullYear()+"d"+retrLiveDoy(d)+"_retr_"+kind+"_"+kid; }
+// ── pure: what this kid's retrieval cards should be on the open days of the week ──
+// o = {dayISO(dn), todayISO, todayOpen, nowMin, win(dn,iso), kidOff(kid,dn), checked, claimed, on, kinds(dn3)→[kind],
+//      minutes(kind), mom(kind), toMin, fromMin, slot(tasks,card,W,x)}
+// → {upd:{<id>:card|null, <closingId>/time:t}, added:[card], removed:[id], retimed:[{id,from,to}]} — week<N>/tasks children only
+function retrLiveDiff(kid,tasks,o){
+  o=o||{}; const out={upd:{},added:[],removed:[],retimed:[]};
+  const tm=o.toMin, fm=o.fromMin, ck=o.checked||{}, cl=o.claimed||{};
+  const held=t=>!!ck[t.id]||!!cl[t.id]||!!t.momPartDone;
+  let work=(tasks||[]).filter(Boolean);
+  RETR_LIVE_DAYS.forEach(function(dn){
+    const iso=o.dayISO?o.dayISO(dn):null; if(!iso||!o.todayISO) return;
+    if(iso<o.todayISO) return;                                   // a past day never changes
+    const isToday=(iso===o.todayISO); if(isToday&&!o.todayOpen) return;
+    const want=(o.on?(o.kinds(dn.slice(0,3))||[]):[]).filter(k=>k&&k!=="off"&&RETR_SLOT_TITLE[k]);
+    // 1. off / changed kind → the open card goes
+    RETR_DAY_KINDS.forEach(function(kind){
+      if(kind==="off"||want.indexOf(kind)>=0) return;
+      const id=retrLiveId(kid,kind,iso);
+      const t=work.find(x=>x.id===id); if(!t||held(t)) return;
+      work=work.filter(x=>x!==t); out.upd[id]=null; out.removed.push(id);
+    });
+    // 2. a wanted kind with no card → the builder's card
+    if(o.kidOff&&o.kidOff(kid,dn)) return;
+    want.forEach(function(kind){
+      const id=retrLiveId(kid,kind,iso);
+      if(work.some(x=>x.id===id)) return;                       // already there (any day, any state) — never twice
+      const mine=work.filter(t=>t.who===kid&&t.day===dn&&!String(t.id||"").endsWith("_c")&&t.subjectKey!=="retrieval");
+      if(!mine.length) return;                                  // the kid has nothing that day → off, like the builder
+      const slot={id:id,who:kid,day:dn,time:null,dur:o.minutes(kind),title:RETR_SLOT_TITLE[kind],detail:RETR_SLOT_DETAIL[kind],
+        mom:o.mom(kind),cascade:true,device:"paper",subjectKey:"retrieval",retrieval:kind};
+      let m=null; try{ const W=o.win(dn,iso); m=W?o.slot(work,slot,W,{toMin:tm,floor:isToday?o.nowMin:0}):null; }catch(e){ m=null; }
+      if(m!=null){
+        slot.time=fm(m);
+        const slotEnd=m+slot.dur;                               // keep the kid's Closing Notebook the last thing of the day (the builder's rule)
+        work=work.map(function(c){
+          if(c.who!==kid||c.day!==dn||!((c.title||"").indexOf("Closing Notebook")>=0||c.subjectKey==="closing_nb")||held(c)||tm(c.time)>=slotEnd) return c;
+          const c2=Object.assign({},c,{time:fm(slotEnd)}); out.upd[c.id+"/time"]=c2.time; out.retimed.push({id:c.id,from:c.time,to:c2.time}); return c2;
+        });
+      } else {
+        let lastEnd=0; work.forEach(t=>{ if(t.who!==kid||t.day!==dn) return; const e=tm(t.time)+(t.dur||20); if(e>lastEnd) lastEnd=e; });
+        slot.time=fm(lastEnd); slot._dayDrop=true;
+      }
+      work.push(slot); out.upd[id]=slot; out.added.push(slot);
+    });
+  });
+  return out;
+}
+// the app's context for retrLiveDiff (the builder's: retrOn / retrDayKinds / retrSlotMinutes / retrSlotMom / seGuardCtx().win)
+function retrLiveCtx(kid){
+  const g=(typeof seGuardCtx==="function")?seGuardCtx():null;
+  const n=new Date(), iso=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  return {
+    dayISO:dn=>{ try{ const s=(typeof DAY_DT==="object"&&DAY_DT)?DAY_DT[dn]:null; if(!s) return null; const d=new Date(s+", "+n.getFullYear()); return isNaN(d.getTime())?null:iso(d); }catch(e){ return null; } },
+    todayISO:iso(n), todayOpen:(typeof _rlwModeToday==="function")?(_rlwModeToday()!=="tomorrow"):false,
+    nowMin:Math.ceil((n.getHours()*60+n.getMinutes())/5)*5,     // the builder's running-day floor
+    win:(dn,ds)=>g?g.win(dn,ds):null, kidOff:(k,dn)=>!!(g&&g.kidOff(k,dn)),
+    checked:(typeof checked!=="undefined"&&checked)||{}, claimed:(typeof claimed!=="undefined"&&claimed)||{},
+    on:(typeof retrTracks==="function")&&((typeof retrOn==="function")?retrOn(kid):retrTracks(kid).length>0),
+    kinds:dk=>retrDayKinds(kid,dk), minutes:k=>((typeof retrSlotMinutes==="function")?retrSlotMinutes(kid,k):15),
+    mom:k=>((typeof retrSlotMom==="function")?retrSlotMom(k):"required"),
+    toMin:toMin, fromMin:fromMin, slot:(ts,c,W,x)=>seRetrSlot(ts,c,W,x)};
+}
+// pass R inside relayWeek's run (its lock, its snapshot before and diff after): this device's memory first, then ONE targeted
+// multi-path update of week<N>/tasks children — never the node
+function retrLiveRelay(pend){
+  const kids=(pend&&pend.retr)||[]; if(!kids.length) return null;
+  try{
+    if(typeof weekData==="undefined"||!weekData||!Array.isArray(weekData.tasks)) return null;
+    const all={upd:{},added:[],removed:[],retimed:[]};
+    kids.forEach(function(kid){
+      const d=retrLiveDiff(kid,weekData.tasks,retrLiveCtx(kid));
+      d.removed.forEach(function(id){ const k=weekData.tasks.findIndex(t=>t&&t.id===id); if(k>=0) weekData.tasks.splice(k,1); });
+      d.retimed.forEach(function(r){ const t=weekData.tasks.find(x=>x&&x.id===r.id); if(t) t.time=r.to; });
+      d.added.forEach(function(c){ weekData.tasks.push(Object.assign({},c)); });
+      Object.assign(all.upd,d.upd); all.added=all.added.concat(d.added); all.removed=all.removed.concat(d.removed); all.retimed=all.retimed.concat(d.retimed);
+    });
+    if(!Object.keys(all.upd).length) return all;
+    try{ sv(WK+"_tasks",weekData.tasks); }catch(e){}
+    if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){ lastTasksWrite=Date.now(); db.ref(WK+"/tasks").update(all.upd); }   // targeted: one leaf per card
+    try{ dbg("\u{1F0CF} practice days on the live week ("+kids.join(" ")+"): +"+all.added.length+" −"+all.removed.length+(all.retimed.length?" · Closing re-timed "+all.retimed.length:"")); }catch(e){}
+    return all;
+  }catch(e){ try{ dbg("retrlive pass R: "+e); }catch(x){} return null; }
+}
+// RETRLIVE_END
 
 function runGenerateWeek(){
   if(!gwConfig.weekNum){
