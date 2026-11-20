@@ -34,11 +34,16 @@
 //   🎂 nudge (birthday within 30 days, no occasion yet — nothing written until she taps) · 🕰 Last time strip · 📜 Past with totals.
 // GIFTS slice 7 (kids' wish lists, plan §3.7 / §4) — see GIFTS_WISH_START: a kid's page shows their own wishes/<kid> list;
 //   💭 Add as an idea → a present with wish:"<kid>/<wid>". Nothing is ever written under wishes/ about a present (the secret).
+// GIFTS slice 5 (⏰ reminders, plan §3.6) — see GIFTS_REMIND_START: computed lines at the top of Gifts and in Home Base's 🔴 NOW
+//   (window.giftNowLines — Mom only, never a present's name). gifts/occasions/<oid>.orderBy = her "order the last presents by" date.
+// GIFTS_GROUPS (her ask + "yes" 2026-11-20) — see GIFTS_GROUPS_START: 👧 Kids · <each group> buttons on People (always opens on Kids);
+//   gifts/groups/<gid>/secs/<sid> {name, emoji, order}  a group's OWN sections, kept across occasions (none = one 🎁 Gifts, unsaved);
+//   the kids keep the occasion's sections. Section choices follow the (first) person's group.
 // Totals are COMPUTED here, never stored (the esa.js rule). A gift for several people splits its cost evenly between them and
 // counts once for each (🤝). Every write = one set/update/remove of ONE record (+ a log line). Nothing here touches schedules.
 (function(){
 "use strict";
-let gfShKey="", gfData={}, gfOn=false, gfLoaded=false, gfOcc=null, gfView="people", gfPid=null, gfEdit=null, gfRoot=null, gfAh="", gfSelOn=false, gfSel={};
+let gfShF="all", gfShN=0, gfShKey="", gfData={}, gfOn=false, gfLoaded=false, gfOcc=null, gfView="people", gfPid=null, gfEdit=null, gfRoot=null, gfAh="", gfSelOn=false, gfSel={};
 const GF_STATUS=[["idea","💭 Idea","#64748b"],["ordered","🛒 Ordered","#d97706"],["here","📦 Here","#0f766e"],["wrapped","🎀 Wrapped","#be185d"],["given","🎄 Given","#16a34a"],["returned","↩ Returned","#7c3aed"],["dropped","✕ Dropped","#94a3b8"]];
 const GF_NEXT={idea:"ordered",ordered:"here",here:"wrapped",wrapped:"given"};
 const GF_DEAD=["returned","dropped"];   // no longer counts toward money or gift counts
@@ -148,24 +153,25 @@ function occHead(o){
 }
 function daysTo(iso){const a=new Date(today()+"T12:00:00"),b=new Date(String(iso)+"T12:00:00");const d=Math.round((b-a)/864e5);return isNaN(d)?"":d>1?d+" days to go":d===1?"tomorrow":d===0?"today":"";}
 function peopleView(o){
-  let h=occHead(o);
+  let h=occHead(o)+stashCard(o);   // STASH: presents on hold, offered to this holiday
   const star=occStar(o);   // GIFTS_OCC: a birthday's person first and open; everyone else folds under "Others giving or getting"
   if(star)h+=starCard(o,star)+othersBtn(o,star);
   const P=people().filter(p=>p.id!==star);
-  if(!star||gfOthersOpen===o.id)groups().forEach(g=>{
+  if(!star||gfOthersOpen===o.id)h+=grpBar();   // GIFTS_GROUPS: 👧 Kids · each group · ＋ Group
+  if(!star||gfOthersOpen===o.id)groups().filter(g=>g.id===curGrp()).forEach(g=>{   // GIFTS_GROUPS: only the group she picked
     const ps=P.filter(p=>(p.group||"other")===g.id);if(!ps.length)return;
     const T=groupTot(o.id,g.id);
     h+='<div class="gf-card"><div class="gf-ghd"><span>'+esc(g.emoji||"")+' '+esc(g.name)+'</span><span class="gf-gsum">'+money(T.paid)+(T.budget!=null?' / '+money(T.budget):'')+'</span>'+
-      '<button class="gf-tool" onclick="gfGroupBudget(\''+esc(g.id)+'\')">💲</button></div>'+(T.budget!=null?'<div style="padding:0 14px">'+bar(T)+'</div>':'')+'<div class="gf-bd">';
+      '<button class="gf-tool" onclick="gfGroupBudget(\''+esc(g.id)+'\')">💲</button></div>'+(T.budget!=null?'<div style="padding:0 14px">'+bar(T)+'</div>':'')+grpSecLine(g)+'<div class="gf-bd">';   // GIFTS_GROUPS
     ps.forEach(p=>{const PT=personTot(o.id,p.id);
       h+='<button class="gf-prow" onclick="gfOpenPerson(\''+esc(p.id)+'\')"><span class="gf-dot" style="background:'+esc(p.color||"#94a3b8")+'"></span>'+
-        '<span class="gf-pn">'+esc(p.name)+'<span class="gf-pc">'+(PT.count?PT.count+' present'+(PT.count===1?'':'s')+' · '+counts(PT):'nothing yet')+'</span>'+bar(PT)+'</span>'+
+        '<span class="gf-pn">'+esc(p.name)+'<span class="gf-pc">'+(PT.count?PT.count+' present'+(PT.count===1?'':'s')+(PT.shared?' · 👤 '+(PT.count-PT.shared)+' own · 🤝 '+PT.shared+' shared':'')+' · '+counts(PT):'nothing yet')+'</span>'+bar(PT)+'</span>'+
         '<span class="gf-amt">'+money(PT.paid)+(PT.budget!=null?'<small> / '+money(PT.budget)+'</small>':'')+'</span></button>';});
     h+='</div></div>';
   });
   const nobody=items(o.id).filter(it=>!pidsOf(it).length);
   if(nobody.length)h+='<div class="gf-card"><div class="gf-ghd"><span>💭 Not for anyone yet</span></div><div class="gf-bd">'+nobody.map(it=>itemRow(it,null)).join("")+'</div></div>';
-  h+='<div class="gf-acts"><button class="gf-tool" onclick="gfNewItem(null,null)">＋ Present</button><button class="gf-tool" onclick="gfNewPerson()">＋ Person</button><button class="gf-tool" onclick="gfNewGroup()">＋ Group</button></div>';
+  h+='<div class="gf-acts"><button class="gf-tool" onclick="gfNewItem(null,null)">＋ Present</button><button class="gf-tool" onclick="gfNewPerson()">＋ Person</button></div>';   // GIFTS_GROUPS: ＋ Group is on the group bar
   return h;
 }
 function needsChips(it){const n=it.needs||{};return (n.batt?'<span>🔋 '+esc(n.batt===true?"batteries":n.batt)+'</span>':'')+(n.build?'<span>🔧 assemble</span>':'')+(n.charge?'<span>🔌 charge</span>':'');}
@@ -176,7 +182,8 @@ function itemRow(it,pid){
   const who=pid?(P.length>1?chip("🤝 with "+P.filter(x=>x!==pid).map(nm).join(", "),"#0e7490"):""):(P.length?chip((P.length>1?"🤝 ":"👤 ")+P.map(nm).join(", "),P.length>1?"#0e7490":"#334155"):chip("🗄 no one yet","#64748b"));
   const amt=num(it.paid)!=null?money(num(it.paid)):(num(it.plan)!=null?'<span style="color:#64748b">plan '+money(num(it.plan))+'</span>':'—');
   const nx=GF_NEXT[it.status||"idea"],picked=!!gfSel[it.id];
-  return '<div class="gf-item'+(live(it)?'':' dead')+(picked?' picked':'')+'"><button class="gf-ib" onclick="'+(gfSelOn?'gfPick':'gfEditItem')+'(\''+esc(it.id)+'\')">'+(gfSelOn?'<span class="gf-box">'+(picked?'✓':'')+'</span>':'')+'<div class="gf-it"><b>'+esc(it.name)+'</b></div><div class="gf-im">'+chip(s[1],s[2])+who+
+  const onHold=it.occ===GF_HOLD?chip("🗄 on hold","#7c3aed"):"";   // STASH
+  return '<div class="gf-item'+(live(it)?'':' dead')+(picked?' picked':'')+'"><button class="gf-ib" onclick="'+(gfSelOn?'gfPick':'gfEditItem')+'(\''+esc(it.id)+'\')">'+(gfSelOn?'<span class="gf-box">'+(picked?'✓':'')+'</span>':'')+'<div class="gf-it"><b>'+esc(it.name)+'</b></div><div class="gf-im">'+chip(s[1],s[2])+onHold+who+
     dueChip(it)+(it.where?'<span>📍 '+esc(it.where)+'</span>':'')+(it.paper?'<span>🎀 '+esc(it.paper)+'</span>':'')+(it.store?'<span>🏬 '+esc(it.store)+'</span>':'')+rcptChip(it)+needsChips(it)+'</div></button>'+
     '<div class="gf-ia"><div class="gf-amt">'+amt+(P.length>1&&pid&&num(it.paid)!=null?'<small> ('+money(num(it.paid)/P.length)+' each)</small>':'')+'</div>'+(gfSelOn?'':'<div style="display:flex;gap:4px">'+
     (nx?'<button class="gf-tool gf-mini" title="Next: '+esc(st(nx)[1])+'" onclick="gfNext(\''+esc(it.id)+'\')">'+st(nx)[1].split(" ")[0]+'</button>':'')+
@@ -184,26 +191,44 @@ function itemRow(it,pid){
 }
 function personView(o,pid){
   const p=person(pid);if(!p){gfView="people";return peopleView(o);}
-  const T=personTot(o.id,pid),S=secsOf(o),mine=items(o.id).filter(it=>pidsOf(it).indexOf(pid)>=0);
+  const T=personTot(o.id,pid),S=secsFor(o,[pid]),mine=items(o.id).filter(it=>pidsOf(it).indexOf(pid)>=0);
   let h='<button class="gf-tool" style="margin-bottom:8px" onclick="gfBack()">← Everyone</button>';
   h+='<div class="gf-card"><div class="gf-hd" style="background:'+esc(p.color||"#475569")+'"><span>'+esc(p.name)+' · '+esc(o.name)+'</span><button class="gf-tool gf-hdb" onclick="gfEditPerson(\''+esc(pid)+'\')">✏️</button></div>'+
-    '<div class="gf-bd">'+bar(T)+'<div class="gf-line">'+sumLine(T)+'</div><div class="gf-line" style="color:#475569">'+T.count+' present'+(T.count===1?'':'s')+(T.shared?' · 🤝 '+T.shared+' shared':'')+(p.paper?' · 🎀 '+esc(p.paper):'')+'</div>'+
+    '<div class="gf-bd">'+bar(T)+'<div class="gf-line">'+sumLine(T)+'</div><div class="gf-line" style="color:#475569">'+T.count+' present'+(T.count===1?'':'s')+(T.shared?' · 👤 '+(T.count-T.shared)+' just theirs · 🤝 '+T.shared+' shared':'')+(p.paper?' · 🎀 '+esc(p.paper):'')+'</div>'+
     (p.sizes?'<div class="gf-line">👕 '+esc(p.sizes)+'</div>':'')+   // GIFTS_OCC
     '<div style="margin-top:6px"><button class="gf-tool" onclick="gfBudget(\''+esc(pid)+'\')">💲 Budget</button></div></div></div>';
   h+=lastTime(o,pid);   // GIFTS_OCC: 🕰 what they got before
   h+=wishCard(o,pid);   // GIFTS_WISH: 💌 a kid's own wish list
+  h+=ownSharedRow(mine);   // OWNSHARED: All · Just theirs · Shared (by how many kids)
   const known=S.map(s=>s.id);
   S.concat(mine.some(it=>known.indexOf(it.sec)<0)?[{id:"",emoji:"📦",name:"No section"}]:[]).forEach(s=>{
-    const L=mine.filter(it=>s.id?it.sec===s.id:known.indexOf(it.sec)<0),ST=s.id?personTot(o.id,pid,s.id):null;
+    const L=mine.filter(it=>(s.id?it.sec===s.id:known.indexOf(it.sec)<0)&&ownSharedPass(it)),ST=s.id?personTot(o.id,pid,s.id):null;
     h+='<div class="gf-card"><div class="gf-ghd"><span>'+esc(s.emoji||"")+' '+esc(s.name)+'</span><span class="gf-gsum">'+(ST?money(ST.paid)+(ST.budget!=null?' / '+money(ST.budget):''):'')+'</span>'+
       (s.id?'<button class="gf-tool" onclick="gfNewItem(\''+esc(pid)+'\',\''+esc(s.id)+'\')">＋</button>':'')+'</div>'+(ST&&ST.budget!=null?'<div style="padding:0 14px">'+bar(ST)+'</div>':'')+
-      '<div class="gf-bd">'+(L.length?L.map(it=>itemRow(it,pid)).join(""):'<div class="gf-empty">Nothing here yet.</div>')+'</div></div>';
+      '<div class="gf-bd">'+(L.length?L.map(it=>itemRow(it,pid)).join(""):'<div class="gf-empty">'+(gfShF==="all"?'Nothing here yet.':'None of these here.')+'</div>')+'</div></div>';
   });
   return h;
 }
+// OWNSHARED_START (her ask + yes 2026-11-20: "when you … click on the kid, I would like the option to see all those things separated for
+// the things that are individual … how many individual items they have as well versus how many group items. And then there should also
+// be a filter for like the group items if it has, all 4 kids or if it just has 2 kids"): a kid's page counts 👤 just theirs vs 🤝 shared,
+// and filters the list — All · 👤 Just theirs · 🤝 Shared, then by how many kids share it. Opens on All every time (gfOpenPerson);
+// display only — the money is unchanged (a kid still carries their share of a shared present).
+function ownSharedPass(it){const n=pidsOf(it).length;if(gfShF==="own")return n===1;if(gfShF==="shared")return n>1&&(!gfShN||n===gfShN);return true;}
+function ownSharedRow(mine){
+  const L=mine.filter(live),own=L.filter(it=>pidsOf(it).length===1).length,sh=L.filter(it=>pidsOf(it).length>1);if(!sh.length)return "";   // nothing shared → no filter
+  const b=(on,click,lbl)=>'<button class="gf-vw'+(on?" on":"")+'" onclick="'+click+'">'+lbl+'</button>';
+  let h='<div class="gf-views" style="margin:0 0 8px">'+b(gfShF==="all","gfShareSet('all')","All ("+L.length+")")+b(gfShF==="own","gfShareSet('own')","👤 Just theirs ("+own+")")+b(gfShF==="shared","gfShareSet('shared')","🤝 Shared ("+sh.length+")")+'</div>';
+  if(gfShF==="shared"){const kidsN=kids().length,by={};sh.forEach(it=>{const n=pidsOf(it).length;by[n]=(by[n]||0)+1;});
+    h+='<div class="gf-views" style="margin:-4px 0 10px">'+b(!gfShN,"gfShareSize(0)","All shared")+Object.keys(by).map(Number).sort((a,b)=>b-a).map(n=>b(gfShN===n,"gfShareSize("+n+")",(n===kidsN?"With everyone ("+n+")":n+" kids")+" · "+by[n])).join("")+'</div>';}
+  return h;
+}
+function gfShareSet(f){gfShF=f;gfShN=0;gfDraw();}
+function gfShareSize(n){gfShF="shared";gfShN=+n||0;gfDraw();}
+// OWNSHARED_END
 
 // ── the Christmas views (slice 2) ─────────────────────────────────────────────
-const GF_VIEWS=[["people","👨‍👩‍👧 People"],["even","⚖️ Even"],["wrap","🎀 To wrap"],["where","📍 Where"],["coming","📦 Coming"],["shop","🛍 Shop"],["closet","🗄 Closet"],["eve","🌙 Eve"],["receipts","🧾 Receipts"]];
+const GF_VIEWS=[["people","👨‍👩‍👧 People"],["even","⚖️ Even"],["wrap","🎀 To wrap"],["where","📍 Where"],["coming","📦 Coming"],["shop","🛍 Shop"],["closet","🗄 Stash"],["eve","🌙 Eve"],["receipts","🧾 Receipts"]];
 const GF_SELECTABLE=["person","wrap","where","coming","shop","closet"];
 function viewNav(){
   return '<div class="gf-views">'+GF_VIEWS.map(v=>'<button class="gf-vw'+((gfView===v[0]||(gfView==="person"&&v[0]==="people"))?" on":"")+'" onclick="gfGo(\''+v[0]+'\')">'+v[1]+'</button>').join("")+'<button class="gf-vw add" onclick="gfRcptNew()">📸 Add a receipt</button>'+
@@ -249,7 +274,7 @@ function wrapView(o){
   return h;
 }
 function whereView(o){
-  const L=items(o.id).filter(it=>live(it)&&it.status!=="given"&&it.status!=="idea");
+  const L=items(o.id).filter(it=>live(it)&&it.status!=="given"&&it.status!=="idea").concat(held().filter(it=>it.status!=="idea"));   // STASH: held presents are still in the house
   let h=intro("Every present in the house, by where it's hidden.");
   if(!L.length)return h+'<div class="gf-card"><div class="gf-empty">Nothing in the house yet.</div></div>';
   groupBy(L,it=>it.where,"📍 Not written down").forEach(g=>{h+=listCard((g.key?"📍 ":"")+esc(g.label),g.items.length+"",g.items);});
@@ -271,14 +296,47 @@ function shopView(o){
   groupBy(L,it=>it.store,"🏬 No store yet").forEach(g=>{const sum=g.items.reduce((a,it)=>a+(num(it.plan)||0),0);h+=listCard((g.key?"🏬 ":"")+esc(g.label),sum?"plan "+money(sum):"",g.items);});
   return h;
 }
-function closetView(){
-  const L=items().filter(it=>live(it)&&!pidsOf(it).length);
+function closetView(o){
+  const H=held();   // STASH: on hold for a future holiday
+  let hh="";
+  if(H.length){hh+=intro("🗄 On hold for a future holiday — bought already, waiting for its day. Bring one into "+esc((o&&o.name)||"this holiday")+" and give it a person and section.");
+    hh+='<div class="gf-acts" style="margin-bottom:8px"><button class="gf-tool gf-save" onclick="gfBringIn(\''+H.map(it=>it.id).join(",")+'\')">Bring all '+H.length+' into '+esc((o&&o.name)||"this holiday")+'</button></div>';
+    hh+='<div class="gf-card"><div class="gf-ghd"><span>🗄 On hold</span><span class="gf-gsum">'+H.length+' · '+money(H.reduce((a,it)=>a+(num(it.paid)||0),0))+' paid</span></div><div class="gf-bd">'+
+      H.map(it=>itemRow(it,null).replace('<div class="gf-ia">','<div class="gf-ia"><button class="gf-tool gf-mini" onclick="gfBringIn(\''+esc(it.id)+'\')">Bring in</button>')).join("")+'</div></div>';}
+  const L=items().filter(it=>live(it)&&!pidsOf(it).length&&it.occ!==GF_HOLD);
+  if(!L.length&&H.length)return hh+'<div class="gf-acts"><button class="gf-tool" onclick="gfNewItem(null,null)">＋ Closet present</button></div>';
+  return hh+closetNoOne(L);
+}
+function closetNoOne(L){
   let h=intro("Bought ahead or saved for later, not for anyone yet. ↪ hands one to a person (or another occasion) when its day comes.");
   h+='<div class="gf-acts" style="margin-bottom:10px"><button class="gf-tool" onclick="gfNewItem(null,null)">＋ Closet present</button></div>';
   if(!L.length)return h+'<div class="gf-card"><div class="gf-empty">The gift closet is empty.</div></div>';
   groupBy(L,it=>(occ(it.occ)||{}).name,"").forEach(g=>{h+=listCard("🗄 "+esc(g.label),g.items.length+"",g.items);});
   return h;
 }
+// STASH_START (her ask + yes 2026-11-20: "every year … I end up buying a few extra things that I end up keeping to use for other holidays …
+// push send to, and it could be a different holiday, or it can even be like hold for another holiday, and then when a new holiday is
+// picked or created, then I could pull that out"): 📤 Send to… on a present = ↪ Move with the holiday picker first, plus
+// "🗄 Hold for a future holiday". A held present has occ "_hold" (+ heldFrom): it leaves every holiday's totals, counts, Even, Eve and
+// reminders, but stays on 📍 Where (it's still in the house). 🗄 Stash lists them with "Bring in"; a card on People offers them whenever
+// any are waiting. Bringing one in = ONE update {occ, sec} on that present (its person stays; the section becomes the holiday's first one
+// for that person when its old one isn't there). What she paid then counts toward the holiday it joins.
+const GF_HOLD="_hold";
+function held(){return items().filter(it=>it.occ===GF_HOLD&&live(it)).sort((a,b)=>(b.ts||0)-(a.ts||0));}
+function gfSendTo(id){gfMove(id);}
+function gfBringIn(csv){
+  const oid=curOcc(),o=occ(oid);if(!o)return;const S=secsOf(o),ids=String(csv||"").split(",").filter(Boolean);let n=0;
+  ids.forEach(id=>{const it=(gfData.items||{})[id];if(!it||it.occ!==GF_HOLD)return;
+    const sec=S.some(s=>s.id===it.sec)?it.sec:((S[0]&&S[0].id)||"");const up={occ:oid,sec,heldFrom:null};
+    it.occ=oid;it.sec=sec;delete it.heldFrom;write("gifts/items/"+id,up,"update");n++;});
+  if(n){log("🗄 Brought "+n+" present"+(n===1?"":"s")+" from the Stash into "+o.name);toast("✓ "+n+" in "+o.name+" — give "+(n===1?"it":"them")+" a person and section");}
+  gfDraw();
+}
+function stashCard(o){
+  const H=held();if(!H.length||!o||o.closed)return "";
+  return '<div class="gf-card"><div class="gf-bd" style="display:flex;align-items:center;gap:10px"><span style="font-size:22px">🗄</span><span style="flex:1;font-size:13px">You have <b>'+H.length+' present'+(H.length===1?'':'s')+' on hold</b> — bring any into '+esc(o.name)+'?</span><button class="gf-tool" onclick="gfGo(\'closet\')">Open Stash</button></div></div>';
+}
+// STASH_END
 function eveDone(oid,key){return !!(((gfData.eve||{})[oid]||{}).done||{})[key];}
 function eveLines(oid){const L=(((gfData.eve||{})[oid]||{}).lines)||{};return Object.keys(L).map(id=>Object.assign({id},L[id])).sort((a,b)=>(a.order||0)-(b.order||0));}
 function eveView(o){
@@ -329,7 +387,7 @@ function forPicker(){
   return h+'</div></div>';
 }
 function secPicker(oid){
-  const f=gfEdit.form;const S=secsOf(occ(oid));
+  const f=gfEdit.form;const S=secsFor(occ(oid),f.pids);   // GIFTS_GROUPS: the first person's group's sections
   return '<div class="gf-f wide"><span>Section</span><div class="gf-picks">'+S.map(s=>'<button class="gf-pick'+(f.sec===s.id?" on":"")+'" onclick="gfSetDraw(\'sec\',\''+esc(s.id)+'\')">'+esc((s.emoji||"")+" "+s.name)+'</button>').join("")+'</div></div>';
 }
 function itemSheet(){
@@ -346,9 +404,11 @@ function itemSheet(){
   return h+'</div>';
 }
 function moveSheet(){
-  const f=gfEdit.form;
-  return '<div class="gf-form"><div class="gf-sub wide">Pick who it\'s for now — everything else (what you paid, where it is, its status) goes with it.</div>'+forPicker()+
-    '<label class="gf-f wide"><span>Occasion</span><select onchange="gfSetDraw(\'occ\',this.value)">'+occs().map(o=>'<option value="'+esc(o.id)+'"'+(o.id===f.occ?" selected":"")+'>'+esc(o.name)+'</option>').join("")+'</select></label>'+secPicker(f.occ)+'</div>';
+  const f=gfEdit.form,held=f.occ===GF_HOLD;
+  return '<div class="gf-form"><div class="gf-sub wide">Who it\'s for and which holiday — everything else (what you paid, where it is, its status, its receipt) goes with it.</div>'+
+    '<label class="gf-f wide"><span>📤 Send to</span><select onchange="gfSetDraw(\'occ\',this.value)">'+occs().filter(o=>!o.closed||o.id===f.occ).map(o=>'<option value="'+esc(o.id)+'"'+(o.id===f.occ?" selected":"")+'>'+esc(o.name)+'</option>').join("")+
+    '<option value="'+GF_HOLD+'"'+(held?" selected":"")+'>🗄 Hold for a future holiday (Stash)</option></select></label>'+
+    (held?'<div class="gf-sub wide" style="margin:0">It leaves this holiday\'s totals and lists and waits in 🗄 Stash — still on 📍 Where. Bring it into any holiday later.</div>':forPicker()+secPicker(f.occ))+'</div>';
 }
 function personSheet(){
   const f=gfEdit.form,kid=/^k_/.test(f.id||"");
@@ -361,7 +421,7 @@ function personSheet(){
 }
 function budgetSheet(){
   const f=gfEdit.form,o=occ(f.occ);let h='<div class="gf-form">'+field("budget","Budget for "+esc((o||{}).name||"this occasion"),"","money");
-  if(f.secs)secsOf(o).forEach(s=>{h+='<label class="gf-f"><span>'+esc((s.emoji||"")+" "+s.name)+' (optional)</span><input inputmode="decimal" value="'+esc(f.secs[s.id]||"")+'" oninput="gfSecBudget(\''+esc(s.id)+'\',this.value)"></label>';});
+  if(f.secs)secsFor(o,[f.key]).forEach(s=>{h+='<label class="gf-f"><span>'+esc((s.emoji||"")+" "+s.name)+' (optional)</span><input inputmode="decimal" value="'+esc(f.secs[s.id]||"")+'" oninput="gfSecBudget(\''+esc(s.id)+'\',this.value)"></label>';});   // GIFTS_GROUPS: a person in a group gets that group's sections
   return h+'</div>';
 }
 function evenSheet(){return '<div class="gf-form"><div class="gf-sub wide">Flag a kid as behind when they are more than…</div>'+field("pct","% behind in dollars","15","money")+field("n","gifts behind","2","money")+'</div>';}
@@ -371,12 +431,13 @@ function occSheet(){   // OCCFIX (2026-11-20): editing an occasion shows its Sec
   if(!gfEdit.id)h+='<div class="gf-f wide"><span>Kind</span><div class="gf-picks">'+Object.keys(GF_KINDS).map(k=>'<button class="gf-pick'+(f.kind===k?" on":"")+'" onclick="gfSetDraw(\'kind\',\''+k+'\')">'+esc(GF_KINDS[k].label)+'</button>').join("")+'</div></div>';
   h+=occForPicker(f);   // GIFTS_OCC: whose birthday
   h+=field("name","Name","e.g. a birthday 2027")+field("date","Date","","date")+field("budget","Whole budget (optional)","","money");
+  h+=remOrderField(f);   // GIFTS_REMIND: 🚚 her order-by date
   if(gfEdit.id){h+='<div class="gf-f wide"><span>Sections</span>'+f.secs.map((s,i)=>'<div style="display:flex;gap:6px;margin-top:4px"><input style="width:56px" value="'+esc(s.emoji)+'" oninput="gfSecEdit('+i+',\'emoji\',this.value)"><input value="'+esc(s.name)+'" oninput="gfSecEdit('+i+',\'name\',this.value)"></div>').join("")+
     '<button class="gf-tool" style="margin-top:6px;align-self:flex-start" onclick="gfSecAdd()">＋ Section</button></div>';
     h+='<label class="gf-f wide" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" style="width:auto"'+(f.closed?" checked":"")+' onchange="gfSet(\'closed\',this.checked)"> Done — move it to 📜 Past</label>';}
   return h+'</div>';
 }
-const SHEETS={even:["⚖️ When is a kid behind?",evenSheet],item:["Present",itemSheet],move:["↪ Move to…",moveSheet],person:["Person",personSheet],budget:["💲 Budget",budgetSheet],group:["Group",groupSheet],occ:["Occasion",occSheet],rcpt:["Receipt",rcptSheet]};
+const SHEETS={gsecs:["Sections",grpSecsSheet],even:["⚖️ When is a kid behind?",evenSheet],item:["Present",itemSheet],move:["↪ Move to…",moveSheet],person:["Person",personSheet],budget:["💲 Budget",budgetSheet],group:["Group",groupSheet],occ:["Occasion",occSheet],rcpt:["Receipt",rcptSheet]};
 function sheet(){return gfEdit?'<div id="gf-sheet" onclick="if(event.target.id===\'gf-sheet\')gfCancel()"><div class="gf-sh">'+sheetInner()+'</div></div>':"";}
 function sheetInner(){   // what's inside the pop-up (SHEETINPLACE redraws only this when the same pop-up stays open)
   const S=SHEETS[gfEdit.kind];const id=gfEdit.id;
@@ -384,7 +445,7 @@ function sheetInner(){   // what's inside the pop-up (SHEETINPLACE redraws only 
   const del=id&&(gfEdit.kind==="item"||(gfEdit.kind==="person"&&!/^k_/.test(id))||gfEdit.kind==="group");
   return '<button class="gf-x" onclick="gfCancel()">✕</button><div style="font-weight:800;font-size:15px;margin-bottom:8px">'+esc(title)+'</div>'+S[1]()+
     '<div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap"><button class="gf-tool gf-save" onclick="gfSave()">Save</button><button class="gf-tool" onclick="gfCancel()">Cancel</button>'+
-    (gfEdit.kind==="item"&&id?'<button class="gf-tool" onclick="gfMove(\''+esc(id)+'\')">↪ Move to…</button>':'')+
+    (gfEdit.kind==="item"&&id?'<button class="gf-tool" onclick="gfMove(\''+esc(id)+'\')">↪ Move to…</button><button class="gf-tool" onclick="gfSendTo(\''+esc(id)+'\')">📤 Send to…</button>':'')+
     (del?'<button class="gf-tool" style="margin-left:auto;color:#b5394a;border-color:#fecaca" onclick="gfDelete()">Delete</button>':'')+'</div>';
 }
 
@@ -398,11 +459,11 @@ function gfStartOcc(kind,name,date,extra){   // extra (GIFTS_OCC) = {for?, budge
   gfOcc=id;try{HA_LS.setItem("ha_gf_occ",id);}catch(e){}gfView="people";gfDraw();
 }
 function gfPickOcc(id){gfOcc=id;try{HA_LS.setItem("ha_gf_occ",id);}catch(e){}gfView="people";gfDraw();}
-function gfOpenPerson(pid){gfPid=pid;gfView="person";gfDraw();try{window.scrollTo(0,0);}catch(e){}}
+function gfOpenPerson(pid){gfPid=pid;gfView="person";gfShF="all";gfShN=0;gfDraw();try{window.scrollTo(0,0);}catch(e){}}
 function gfBack(){gfView="people";gfDraw();}
 function defaultPaper(pids,sec,oid){const s=((occ(oid)||{}).secs||{})[sec];if(s&&s.paper)return s.paper;const p=person(pids[0]);return (p&&p.paper)||"";}
 function gfNewItem(pid,sid){
-  const oid=curOcc();if(!oid)return;const S=secsOf(occ(oid));const pids=pid?[pid]:[];const sec=sid||(S[0]&&S[0].id)||"";
+  const oid=curOcc();if(!oid)return;const pids=pid?[pid]:[];const S=secsFor(occ(oid),pids);const sec=sid||(S[0]&&S[0].id)||"";
   gfEdit={kind:"item",id:null,form:{occ:oid,name:"",pids,sec,status:"idea",plan:"",paid:"",store:"",link:"",due:"",where:"",paper:defaultPaper(pids,sec,oid),note:"",needs:{},batt:""}};gfDraw();
 }
 function gfEditItem(id){const it=(gfData.items||{})[id];if(!it)return;const f={occ:it.occ,pids:pidsOf(it).slice(),sec:it.sec||"",status:it.status||"idea"};
@@ -414,12 +475,12 @@ function gfMove(id){const it=(gfData.items||{})[id];if(!it)return;gfEdit={kind:"
 function gfSet(k,v){if(!gfEdit)return;gfEdit.form[k]=v;if(k==="name")gfEdit.form.autoName=false;if(k==="date")gfEdit.form.autoDate=false;}
 function gfSetDraw(k,v){if(!gfEdit)return;const f=gfEdit.form;
   if(k==="sec"&&gfEdit.kind==="item"&&!gfEdit.id&&(!f.paper||f.paper===defaultPaper(f.pids,f.sec,f.occ))){f.sec=v;f.paper=defaultPaper(f.pids,v,f.occ);}
-  f[k]=v;if(k==="occ"){const S=secsOf(occ(v));if(!S.some(s=>s.id===f.sec))f.sec=(S[0]&&S[0].id)||"";}
+  f[k]=v;if(k==="occ"){const S=secsFor(occ(v),f.pids);if(!S.some(s=>s.id===f.sec))f.sec=(S[0]&&S[0].id)||"";}
   if(k==="kind"&&!f.id&&(!f.name||f.autoName)){f.name=GF_KINDS[v].label.replace(/^\S+\s/,"")+" "+today().slice(0,4);f.autoName=true;}
   if(k==="kind")occAuto(f);   // GIFTS_OCC
   gfDraw();}
 function gfTogglePid(pid){if(!gfEdit)return;const f=gfEdit.form;const auto=gfEdit.kind==="item"&&!gfEdit.id&&(!f.paper||f.paper===defaultPaper(f.pids,f.sec,f.occ));
-  const i=f.pids.indexOf(pid);if(i>=0)f.pids.splice(i,1);else f.pids.push(pid);if(auto)f.paper=defaultPaper(f.pids,f.sec,f.occ);gfDraw();}
+  const i=f.pids.indexOf(pid);if(i>=0)f.pids.splice(i,1);else f.pids.push(pid);grpSecFix(f);if(auto)f.paper=defaultPaper(f.pids,f.sec,f.occ);gfDraw();}
 function gfSecBudget(sid,v){if(gfEdit&&gfEdit.form.secs)gfEdit.form.secs[sid]=v;}
 function gfSecEdit(i,k,v){if(gfEdit&&gfEdit.form.secs[i])gfEdit.form.secs[i][k]=v;}
 function gfSecAdd(){if(!gfEdit)return;gfEdit.form.secs.push({id:null,emoji:"🎁",name:""});gfDraw();}
@@ -440,15 +501,17 @@ function gfSave(){
     const iid=id||uid();node("items")[iid]=rec;write("gifts/items/"+iid,rec,"set");
     log((id?"Edited: ":"Added: ")+name+" → "+names(f.pids)+(rec.paid!=null?" "+money(rec.paid):""));
   }else if(kind==="rcpt"){if(!rcptSave())return;   // GIFTS_RCPT
+  }else if(kind==="gsecs"){grpSecsSave(f);   // GIFTS_GROUPS
   }else if(kind==="even"){
     const rec={pct:Math.max(0,num(f.pct)==null?15:num(f.pct)),n:Math.max(1,num(f.n)==null?2:Math.round(num(f.n)))};
     node("settings").even=rec;write("gifts/settings/even",rec,"set");log("Even-steven: "+rec.pct+"% or "+rec.n+" gifts");
   }else if(kind==="move"){
     const it=gfData.items[id];if(!it){gfEdit=null;return gfDraw();}
-    const up={pids:f.pids.length?f.pids.slice():null,occ:f.occ,sec:f.sec||""};
+    const held=f.occ===GF_HOLD,up={pids:f.pids.length?f.pids.slice():null,occ:f.occ,sec:held?(it.sec||""):(f.sec||"")};   // STASH: held keeps its person + section until it's brought in
+    if(held&&f.was.occ!==GF_HOLD)up.heldFrom=f.was.occ;
     if(it.paper&&it.paper===defaultPaper(f.was.pids,f.was.sec,f.was.occ)){const np=defaultPaper(f.pids,f.sec,f.occ);if(np)up.paper=np;}   // auto paper follows the new person
     Object.keys(up).forEach(k=>{if(up[k]==null)delete it[k];else it[k]=up[k];});write("gifts/items/"+id,up,"update");
-    log("Moved: "+it.name+": "+names(f.was.pids)+" → "+names(f.pids)+(f.occ!==f.was.occ?" ("+((occ(f.occ)||{}).name||"")+")":""));
+    log(f.occ===GF_HOLD?"🗄 On hold: "+it.name+" (from "+((occ(f.was.occ)||{}).name||"")+")":"Moved: "+it.name+": "+names(f.was.pids)+" → "+names(f.pids)+(f.occ!==f.was.occ?" ("+((occ(f.occ)||{}).name||"")+")":""));
   }else if(kind==="person"){
     const pid=id||newId("people","p-"+slug(f.name));const kid=/^k_/.test(pid);
     const name=kid?f.name:String(f.name||"").trim();if(!name){toast("Needs a name");return;}
@@ -471,6 +534,7 @@ function gfSave(){
     if(!id){gfEdit=null;gfStartOcc(f.kind||"other",name,f.date||"",occExtra(f));return;}   // GIFTS_OCC: for + budget in the ONE set
     const up={name,date:f.date||"",budget:num(f.budget),closed:f.closed?true:null};
     if(f.kind==="birthday")up.for=f.for||null;   // GIFTS_OCC
+    if(f.orderBy!==undefined)up.orderBy=isIso(f.orderBy)?f.orderBy:null;   // GIFTS_REMIND: in the same ONE update
     const o=gfData.occasions[id];Object.keys(up).forEach(k=>{if(up[k]==null)delete o[k];else o[k]=up[k];});write("gifts/occasions/"+id,up,"update");
     const secs=o.secs=o.secs||{};let nextOrder=Object.keys(secs).reduce((m,k)=>Math.max(m,+(secs[k].order)||0),-1)+1;
     f.secs.forEach((s,i)=>{const nm=String(s.name||"").trim();if(!nm)return;const sid=s.id||newId2(secs,slug(nm));const rec={name:nm,emoji:String(s.emoji||"").trim()||"🎁",order:s.id?((secs[s.id]||{}).order||0):nextOrder++};
@@ -510,7 +574,7 @@ function gfLineDel(id){const oid=curOcc(),L=eveNode(oid).lines||{};if(!L[id])ret
 function gfLinesCopy(from){const oid=curOcc();if(!oid)return;const L=eveNode(oid).lines=eveNode(oid).lines||{};
   eveLines(from).forEach((l,i)=>{const id=uid()+i,rec={text:l.text,order:i};L[id]=rec;write("gifts/eve/"+oid+"/lines/"+id,rec,"set");});log("Copied the Christmas Eve list from "+((occ(from)||{}).name||""));gfDraw();}
 function gfEvenEdit(){const E=evenSet();gfEdit={kind:"even",id:null,form:{pct:String(E.pct),n:String(E.n)}};gfDraw();}
-function gfNewPerson(){gfEdit={kind:"person",id:null,form:{name:"",group:"mom",paper:"",birthday:"",sizes:"",note:""}};gfDraw();}
+function gfNewPerson(){gfEdit={kind:"person",id:null,form:{name:"",group:curGrp()!=="kids"?curGrp():"mom",paper:"",birthday:"",sizes:"",note:""}};gfDraw();}
 function gfEditPerson(pid){const p=person(pid);if(!p)return;gfEdit={kind:"person",id:pid,form:{name:p.name||"",group:p.group||"other",paper:p.paper||"",birthday:p.birthday||"",sizes:p.sizes||"",note:p.note||""}};gfDraw();}
 function gfBudget(pid){const oid=curOcc(),p=plan(oid,pid),secs={};Object.keys(p.sec||{}).forEach(k=>{secs[k]=String(p.sec[k]);});
   gfEdit={kind:"budget",id:pid,form:{occ:oid,key:pid,label:(person(pid)||{}).name||pid,budget:p.budget==null?"":String(p.budget),secs}};gfDraw();}
@@ -518,7 +582,7 @@ function gfGroupBudget(gid){const oid=curOcc(),p=plan(oid,"g_"+gid),g=groups().f
   gfEdit={kind:"budget",id:"g_"+gid,form:{occ:oid,key:"g_"+gid,label:g.name||gid,budget:p.budget==null?"":String(p.budget),secs:null}};gfDraw();}
 function gfNewGroup(){gfEdit={kind:"group",id:null,form:{name:"",emoji:"👥"}};gfDraw();}
 function gfNewOcc(){gfEdit={kind:"occ",id:null,form:{kind:"birthday",name:"",date:"",budget:"",autoName:true}};gfSetDraw("kind","birthday");}
-function gfOccEdit(){const o=occ(curOcc());if(!o)return;gfEdit={kind:"occ",id:o.id,form:{kind:o.kind||"other",for:o.for||null,name:o.name||"",date:o.date||"",budget:o.budget==null?"":String(o.budget),closed:!!o.closed,secs:secsOf(o).map(s=>({id:s.id,emoji:s.emoji||"",name:s.name||""}))}};gfDraw();}
+function gfOccEdit(){const o=occ(curOcc());if(!o)return;gfEdit={kind:"occ",id:o.id,form:{kind:o.kind||"other",for:o.for||null,name:o.name||"",date:o.date||"",budget:o.budget==null?"":String(o.budget),orderBy:o.orderBy||"",closed:!!o.closed,secs:secsOf(o).map(s=>({id:s.id,emoji:s.emoji||"",name:s.name||""}))}};gfDraw();}
 
 // GIFTS_WISH_START — 💌 a kid's own wish list on their page, slice 7 (her answer "Kids' wish lists → yes, later" + her yes to
 // building it, 2026-11-20; plan §3.7 + §4 slice 7: "Mom sees them as 💭 ideas on that kid's page. The kid's list never shows what
@@ -609,8 +673,8 @@ window._gfWishTest={setWishes:d=>{gfWishes=d||{};gfWishLoaded=true;},wishes:()=>
 const RC_MAX=6, RC_PDF_MAX=4*1024*1024;
 let gfRcOpen=null;const gfPhotos={};   // the receipt open in the list · photos read so far this visit (rid → [urls] | "loading" | "err")
 const RC_PROMPT='Read this receipt or online order (photos of ONE paper receipt, a screenshot, or a PDF such as an Amazon order page). The items are holiday presents. Reply with ONLY strict JSON, no prose:\n'
-  +'{"store":"store name","date":"YYYY-MM-DD or null","orderNo":"order number as printed, or null","total":number or null,"returnBy":"YYYY-MM-DD or null","tax":number or null,"lines":[{"text":"the item as printed","name":"a short plain name for it (a few words)","qty":whole number,"price":number,"taxed":true or false or null,"idea":"the exact idea name from her list below, or null"}]}\n'
-  +'price = what was actually paid for that line after any discount — always the LINE total (2 @ 9.99 = 19.98). qty = how many of the item that line is (2 @ 9.99 → 2; 1 when no count is printed). tax = the sales tax total printed on it (null if none is shown). taxed = whether that line is marked as taxed (stores print a letter such as T, X or A beside taxed lines; false when it is marked not taxed; null when the receipt does not show). returnBy = only a return-by date or the end of a return window that is PRINTED on it; never work one out yourself. '
+  +'{"store":"store name","date":"YYYY-MM-DD or null","orderNo":"order number as printed, or null","total":number or null,"returnBy":"YYYY-MM-DD or null","subtotal":number or null,"discount":number or null,"tax":number or null,"lines":[{"text":"the item as printed","name":"a short plain name for it (a few words)","qty":whole number,"price":number,"taxed":true or false or null,"idea":"the exact idea name from her list below, or null"}]}\n'
+  +'price = what was paid for that line after any discount printed ON THAT LINE — always the LINE total for all of its items: when it prints "N @ $X", X is the price of ONE, so price = N × X (2 @ 9.99 = 19.98; 3 @ $30.99 = 92.97). A crossed-out or "reference" price is never the price. subtotal = the items subtotal printed (null if none). discount = the total of the ORDER-LEVEL discounts printed below the items — coupons, promo codes, "Prime discount", savings, rewards — as a POSITIVE number (90.46 for "-$90.46"); never a discount already taken off a line, never a gift card or payment; null if none. qty = how many of the item that line is (2 @ 9.99 → 2; 1 when no count is printed). tax = the sales tax total printed on it (null if none is shown). taxed = whether that line is marked as taxed (stores print a letter such as T, X or A beside taxed lines; false when it is marked not taxed; null when the receipt does not show). returnBy = only a return-by date or the end of a return window that is PRINTED on it; never work one out yourself. '
   +'Several photos are one receipt from top to bottom and neighbouring photos may overlap: list each line ONCE. Skip tax, subtotal, total, shipping, bag fees, payment and change lines. Never invent lines or prices.';
 function claudeKey(){try{return (typeof kitCapKey==="function"&&kitCapKey())||"";}catch(e){return "";}}
 function firstJson(txt){   // the first complete top-level {…} (the grocery reader's rule, GR_RCPTLONG) — null when it never closed
@@ -630,7 +694,7 @@ function matchIdea(line,guess,oid,used){   // Claude's pick first (exact name), 
   L.forEach(it=>{const w=toks(it.name);if(!w.length)return;const s=w.filter(x=>lt.indexOf(x)>=0).length/w.length;if(s>bs){bs=s;best=it.id;}});
   return bs>=0.6?best:null;
 }
-function rcRow(oid,t,p){const S=secsOf(occ(oid));return {t:t||"",p:p==null?"":String(p),pids:[],sec:(S[0]&&S[0].id)||"",nog:false,idea:null,useIdea:false,taxed:null,of:""};}
+function rcRow(oid,t,p){const S=secsFor(occ(oid),[]);return {t:t||"",p:p==null?"":String(p),pids:[],sec:(S[0]&&S[0].id)||"",nog:false,idea:null,useIdea:false,taxed:null,of:""};}
 // RCPTTAX (her ask 2026-11-20: "is there a way to include in a receipt and figure out the tax per item … one item I had three of, and it
 // just did it as one thing … maybe it should pull it out three different times also so it could do the tax as well"):
 //  · a line Claude reads as qty N (2–12) becomes N rows, each 1/N of the line's price (cents split so they add up exactly), "1 of 3"…
@@ -638,8 +702,23 @@ function rcRow(oid,t,p){const S=secsOf(occ(oid));return {t:t||"",p:p==null?"":St
 //    only carry their own share; lines marked not taxed get none (when the receipt marks none either way, every line is taxed).
 //    The shares are worked out in whole cents (leftover cents to the lines nearest the next cent), so they add up to the tax exactly.
 //  · a present's paid = its price + its tax share (what it really cost — her pick 2026-11-20), and its tax share is kept on it as tax.
-function rcTaxShares(rows,tax){
-  const T=Math.round((num(tax)||0)*100),P=rows.map(r=>Math.round((num(r.p)||0)*100)),out=rows.map(()=>0);if(!T)return out;
+// RCPTDISC (her report 2026-11-20, a Woot order: "it didnt account for the discount and accounted for the price before the discount
+// which was significant" — a −$90.46 "Prime discount" below the items was skipped, and "3 @ $30.99" was read as $30.99 for all three):
+//  · Claude also reads the items subtotal and the order-level discount (coupons, promos, "Prime discount" — never a gift card).
+//  · the discount is shared across the lines by price, in whole cents that add up exactly (the tax rule's way), and the TAX is then
+//    shared on what each line cost after its discount;  a present's paid = price − its discount share + its tax share.
+//  · "N @ $X" read as $X for the whole line: when the prices only add up to the printed subtotal as each × N, they are each × N.
+//  · the check screen adds it up — items − discount + tax — against the receipt's total: ✓ when it matches, ⚠ when it doesn't.
+// RCPTNET (her ask 2026-11-20: "id rather see the real number i think other families will be confused"): each line on the check
+// screen spells out "$17.99 − $10.80 off + $0.50 tax = $7.69" before Save, and the 🧾 list leads with what each line really cost.
+function rcShares(rows,amt,on,base){   // share a cents amount across rows by weight (base cents), leftover cents to the nearest-next
+  const T=Math.round((num(amt)||0)*100),out=rows.map(()=>0);if(!T)return out;const sum=base.reduce((a,b,i)=>a+(on[i]?b:0),0);if(!sum)return out;
+  const fr=[];let given=0;rows.forEach((r,i)=>{if(!on[i])return;const x=T*base[i]/sum;out[i]=Math.floor(x);given+=out[i];fr.push([x-out[i],i]);});
+  fr.sort((a,b)=>b[0]-a[0]||a[1]-b[1]).slice(0,T-given).forEach(z=>{out[z[1]]++;});return out.map(c=>c/100);
+}
+function rcDiscShares(rows,disc){const P=rows.map(r=>Math.round((num(r.p)||0)*100));return rcShares(rows,disc,P.map(p=>p>0),P);}
+function rcTaxShares(rows,tax,disc){
+  const D=rcDiscShares(rows,disc),T=Math.round((num(tax)||0)*100),P=rows.map((r,i)=>Math.max(0,Math.round((num(r.p)||0)*100)-Math.round(D[i]*100))),out=rows.map(()=>0);if(!T)return out;
   const marked=rows.some(r=>r.taxed===true||r.taxed===false),on=rows.map((r,i)=>P[i]>0&&(marked?r.taxed!==false:true));
   const base=P.reduce((a,p,i)=>a+(on[i]?p:0),0);if(!base)return out;
   const fr=[];let given=0;rows.forEach((r,i)=>{if(!on[i])return;const x=T*P[i]/base;out[i]=Math.floor(x);given+=out[i];fr.push([x-out[i],i]);});
@@ -653,10 +732,14 @@ function rcptLoad(f,d,oid){   // Claude's answer → the form; what she already 
   if(!String(f.orderNo||"").trim()&&d.orderNo)f.orderNo=String(d.orderNo).slice(0,60);
   if(num(f.total)==null&&num(d.total)!=null)f.total=String(num(d.total));if(!f.returnBy&&isoOk(d.returnBy))f.returnBy=isoOk(d.returnBy);
   if(num(f.tax)==null&&num(d.tax)!=null)f.tax=String(num(d.tax));   // RCPTTAX
+  if(num(f.discount)==null&&num(d.discount)!=null&&num(d.discount)>0)f.discount=String(num(d.discount));   // RCPTDISC
+  const L0=(Array.isArray(d.lines)?d.lines:[]).filter(l=>l&&(l.name||l.text)),sub=num(d.subtotal);   // RCPTDISC: "3 @ $30.99" read as the line → each × 3
+  const qOf=l=>Math.max(1,Math.min(12,Math.round(+l.qty)||1)),s1=L0.reduce((a,l)=>a+(num(l.price)||0),0),s2=L0.reduce((a,l)=>a+(num(l.price)||0)*qOf(l),0);
+  const each=sub!=null&&Math.abs(s1-sub)>0.015&&Math.abs(s2-sub)<=0.02;
   if(!f.statusSet)f.status=f.orderNo?"ordered":"here";
   const used=[];f.rows=[];(Array.isArray(d.lines)?d.lines:[]).filter(l=>l&&(l.name||l.text)).forEach(l=>{
     const nm=String(l.name||l.text).trim().slice(0,140),q=Math.max(1,Math.min(12,Math.round(+l.qty)||1)),tx=l.taxed===true||l.taxed===false?l.taxed:null;   // RCPTTAX: ×3 → three rows
-    const prices=num(l.price)==null?Array(q).fill(null):rcSplit(l.price,q);
+    const prices=num(l.price)==null?Array(q).fill(null):(each?Array(q).fill(num(l.price)):rcSplit(l.price,q));
     prices.forEach((p,k)=>{const r=rcRow(oid,nm,p);r.taxed=tx;if(q>1)r.of=(k+1)+" of "+q;
       const iid=matchIdea((l.text||"")+" "+(l.name||""),k?null:l.idea,oid,used);if(iid){used.push(iid);r.idea=iid;r.useIdea=true;}
       f.rows.push(r);});});
@@ -705,7 +788,7 @@ async function gfRcptPick(input){
 }
 function rcF(){return gfEdit&&gfEdit.kind==="rcpt"?gfEdit.form:null;}
 function rcR(i){const f=rcF();return f&&f.rows[i];}
-function gfRcptNew(){if(!curOcc())return;gfEdit={kind:"rcpt",id:null,form:{files:[],store:"",iso:today(),orderNo:"",total:"",tax:"",returnBy:"",status:"here",statusSet:false,rows:[],read:false,busy:false,adding:false,msg:""}};gfDraw();}
+function gfRcptNew(){if(!curOcc())return;gfEdit={kind:"rcpt",id:null,form:{files:[],store:"",iso:today(),orderNo:"",total:"",tax:"",discount:"",returnBy:"",status:"here",statusSet:false,rows:[],read:false,busy:false,adding:false,msg:""}};gfDraw();}
 function gfRcptDrop(i){const f=rcF();if(!f)return;f.files.splice(i,1);gfDraw();}
 function gfRcSet(i,k,v){const r=rcR(i);if(r)r[k]=v;}
 function gfRcPid(i,pid){const r=rcR(i);if(!r)return;r.nog=false;const j=r.pids.indexOf(pid);if(j>=0)r.pids.splice(j,1);else r.pids.push(pid);gfDraw();}
@@ -727,23 +810,27 @@ function rcptSheet(){
   h+=key?'<div class="gf-f wide"><button class="gf-tool gf-save" style="align-self:flex-start"'+(f.busy||!f.files.length?' disabled':'')+' onclick="gfRcptRead()">'+(f.busy?'⏳ Reading…':'✨ Read it')+'</button></div>'
     :'<div class="gf-sub wide" style="color:#92400e;margin:0">No Claude key on this device, so it can\'t read the receipt — type the total (and the presents, if you like) below. The photos still save as proof for returns.</div>';
   if(f.msg)h+='<div class="gf-sub wide" style="margin:0;font-weight:700;color:'+(/^✓/.test(f.msg)?"#15803d":"#b45309")+'">'+esc(f.msg)+'</div>';
-  h+=field("store","Store","e.g. Target")+field("iso","Date","","date")+field("total","Total $","","money")+field("tax","Tax $","","money")+field("orderNo","Order #","optional")+field("returnBy","⏰ Return by","","date");
+  h+=field("store","Store","e.g. Target")+field("iso","Date","","date")+field("total","Total $","","money")+field("tax","Tax $","","money")+field("discount","Order discount $","","money")+field("orderNo","Order #","optional")+field("returnBy","⏰ Return by","","date");
   if(f.rows.length){
     h+='<div class="gf-f wide"><span>These presents are…</span><div class="gf-picks">'+[["ordered","🛒 On the way"],["here","📦 Here"]].map(s=>'<button class="gf-pick'+(f.status===s[0]?" on":"")+'" onclick="gfRcStatus(\''+s[0]+'\')">'+s[1]+'</button>').join("")+'</div></div>';
     h+='<div class="gf-sub wide" style="margin:4px 0 0">Each line: who it\'s for (tap two or more = 🤝 shared), the section — or 🗄 no one yet, or ✕ not a gift.</div>';
   }
-  const shares=rcTaxShares(f.rows,f.tax),anyTax=num(f.tax)>0;   // RCPTTAX
+  const shares=rcTaxShares(f.rows,f.tax,f.discount),anyTax=num(f.tax)>0,dsh=rcDiscShares(f.rows,f.discount),anyDisc=num(f.discount)>0;   // RCPTTAX · RCPTDISC
+  if(f.rows.length){const it=f.rows.reduce((a,r)=>a+(num(r.p)||0),0),calc=Math.round((it-(num(f.discount)||0)+(num(f.tax)||0))*100)/100,tot=num(f.total);   // RCPTDISC: does it add up?
+    const okSum=tot==null||Math.abs(calc-tot)<=0.02;
+    h+='<div class="gf-sub wide" style="margin:2px 0 0;font-weight:700;color:'+(okSum?'#15803d':'#b45309')+'">'+(okSum?'✓ ':'⚠ ')+'Items '+money(it)+(anyDisc?' − '+money(num(f.discount))+' off':'')+(anyTax?' + '+money(num(f.tax))+' tax':'')+' = '+money(calc)+(tot!=null?(okSum?' — matches the receipt':' — the receipt says '+money(tot)+'. Check the prices, the discount and the tax before you save.'):'')+'</div>';}
   f.rows.forEach((r,i)=>{
     const idea=r.idea&&(gfData.items||{})[r.idea];
     h+='<div class="gf-rcrow'+(r.nog?" nog":"")+'"><div style="display:flex;gap:6px;align-items:center"><input class="gf-in" value="'+esc(r.t)+'" placeholder="What is it?" oninput="gfRcSet('+i+',\'t\',this.value)">'+
       '<input class="gf-in" style="flex:none;width:76px" inputmode="decimal" value="'+esc(r.p)+'" placeholder="$" oninput="gfRcSet('+i+',\'p\',this.value)" onchange="gfRcRedraw()"><button class="gf-tool gf-mini" title="Take this line off" onclick="gfRcDel('+i+')">✕</button></div>';
-    if(r.of||anyTax)h+='<div class="gf-im" style="margin-top:0">'+(r.of?chip("×"+r.of.split(" of ")[1]+" · "+r.of,"#0e7490"):'')+(anyTax?'<button class="gf-pick" style="padding:2px 9px;font-size:11px" onclick="gfRcTaxed('+i+')">'+(shares[i]?'+ '+money(shares[i])+' tax':'no tax')+'</button>':'')+'</div>';   // RCPTTAX
+    const pn=num(r.p),net=pn==null?null:Math.round((pn-(dsh[i]||0)+(shares[i]||0))*100)/100;   // RCPTNET: the real cost, shown before Save
+    if(r.of||anyTax||anyDisc)h+='<div class="gf-im" style="margin-top:0">'+(r.of?chip("×"+r.of.split(" of ")[1]+" · "+r.of,"#0e7490"):'')+(pn!=null&&(anyDisc||anyTax)?'<span>'+money(pn)+'</span>':'')+(anyDisc&&dsh[i]?'<span style="color:#15803d;font-weight:700">− '+money(dsh[i])+' off</span>':'')+(anyTax?'<button class="gf-pick" style="padding:2px 9px;font-size:11px" onclick="gfRcTaxed('+i+')">'+(shares[i]?'+ '+money(shares[i])+' tax':'no tax')+'</button>':'')+(net!=null&&(anyDisc||anyTax)?'<span class="gf-rcnet">= '+money(net)+'</span>':'')+'</div>';   // RCPTTAX · RCPTDISC · RCPTNET
     if(idea)h+='<button class="gf-tick'+(r.useIdea?" on":"")+'" onclick="gfRcUseIdea('+i+')"><span class="gf-box">'+(r.useIdea?'✓':'')+'</span><span>💭 That\'s your idea <b>'+esc(idea.name)+'</b>'+(pidsOf(idea).length?' ('+esc(names(pidsOf(idea)))+')':'')+' — mark it bought</span></button>';
     if(!(r.useIdea&&idea)){
       h+='<div class="gf-picks">';groups().forEach(g=>{people().filter(p=>(p.group||"other")===g.id).forEach(p=>{const on=r.pids.indexOf(p.id)>=0;
         h+='<button class="gf-pick'+(on?" on":"")+'" style="'+(on?"background:"+esc(p.color||"#0f172a")+";border-color:"+esc(p.color||"#0f172a"):"")+'" onclick="gfRcPid('+i+',\''+esc(p.id)+'\')">'+esc(p.name)+'</button>';});});
       h+='<button class="gf-pick'+(!r.nog&&!r.pids.length?" on":"")+'" onclick="gfRcNone('+i+')">🗄 No one yet</button><button class="gf-pick'+(r.nog?" on":"")+'" onclick="gfRcNog('+i+')">✕ Not a gift</button></div>';
-      if(!r.nog&&r.pids.length)h+='<div class="gf-picks">'+S.map(s=>'<button class="gf-pick'+(r.sec===s.id?" on":"")+'" onclick="gfRcSec('+i+',\''+esc(s.id)+'\')">'+esc((s.emoji||"")+" "+s.name)+'</button>').join("")+'</div>';
+      if(!r.nog&&r.pids.length)h+='<div class="gf-picks">'+rcSecs(o,r).map(s=>'<button class="gf-pick'+(r.sec===s.id?" on":"")+'" onclick="gfRcSec('+i+',\''+esc(s.id)+'\')">'+esc((s.emoji||"")+" "+s.name)+'</button>').join("")+'</div>';
     }
     if(!r.nog&&I.length)h+='<select class="gf-sel" style="margin-top:6px" onchange="gfRcIdea('+i+',this.value)"><option value="">'+(r.idea?"Not one of my ideas":"Or it\'s one of my 💭 ideas…")+'</option>'+I.map(it=>'<option value="'+esc(it.id)+'"'+(it.id===r.idea?" selected":"")+'>'+esc(it.name)+(pidsOf(it).length?' — '+esc(names(pidsOf(it))):'')+'</option>').join("")+'</select>';
     h+='</div>';
@@ -758,16 +845,16 @@ function rcptSave(){   // photos (own node) → the receipt (ONE set) → one se
   if(!f.files.length&&!rows.length&&num(f.total)==null){toast("Add a photo or type the total");return false;}
   const rid=uid(),store=String(f.store||"").trim().slice(0,60),ord=String(f.orderNo||"").trim().slice(0,60),ret=isoOk(f.returnBy),status=f.status==="ordered"?"ordered":"here";
   if(f.files.length){const urls=f.files.map(x=>x.url);gfPhotos[rid]=urls;write("giftPhotos/"+rid,urls,"set");}
-  const lines=[],todo=[],shares=rcTaxShares(rows,f.tax),tax=num(f.tax);let made=0,bought=0;   // RCPTTAX: each line's share of the tax
-  rows.forEach((r,ri)=>{const t=String(r.t||"").trim().slice(0,140),p=num(r.p),sh=shares[ri]||0,line={t};if(p!=null)line.p=p;if(sh)line.tax=sh;
-    if(!r.nog){const fill={status,rcpt:rid};if(p!=null)fill.paid=Math.round((p+sh)*100)/100;if(sh)fill.tax=sh;if(store)fill.store=store;if(ret)fill.returnBy=ret;if(ord)fill.orderNo=ord;
+  const lines=[],todo=[],shares=rcTaxShares(rows,f.tax,f.discount),dsh=rcDiscShares(rows,f.discount),tax=num(f.tax),disc=num(f.discount)>0?num(f.discount):null;let made=0,bought=0;   // RCPTTAX · RCPTDISC
+  rows.forEach((r,ri)=>{const t=String(r.t||"").trim().slice(0,140),p=num(r.p),sh=shares[ri]||0,ds=dsh[ri]||0,line={t};if(p!=null)line.p=p;if(ds)line.disc=ds;if(sh)line.tax=sh;
+    if(!r.nog){const fill={status,rcpt:rid};if(p!=null)fill.paid=Math.round((p-ds+sh)*100)/100;if(ds)fill.disc=ds;if(sh)fill.tax=sh;if(store)fill.store=store;if(ret)fill.returnBy=ret;if(ord)fill.orderNo=ord;
       const idea=r.useIdea&&r.idea&&(gfData.items||{})[r.idea];
       if(idea){line.item=r.idea;todo.push(()=>{Object.assign(idea,fill);write("gifts/items/"+r.idea,fill,"update");});bought++;}
       else{const iid=uid()+lines.length,pids=r.pids.slice(),rec=Object.assign({occ:oid,sec:r.sec||"",name:t,ts:Date.now()},fill);if(pids.length)rec.pids=pids;
         const pp=defaultPaper(pids,rec.sec,oid);if(pp)rec.paper=pp;line.item=iid;todo.push(()=>{node("items")[iid]=rec;write("gifts/items/"+iid,rec,"set");});made++;}}
     lines.push(line);});
-  const sum=lines.reduce((a,l)=>a+(l.p||0),0)+(tax||0),total=num(f.total)!=null?num(f.total):(lines.some(l=>l.p!=null)?Math.round(sum*100)/100:null);
-  const rec={store,iso:isoOk(f.iso)||today(),lines,photoCount:f.files.length,occ:oid,ts:Date.now()};if(total!=null)rec.total=total;if(tax)rec.tax=tax;if(ord)rec.orderNo=ord;if(ret)rec.returnBy=ret;
+  const sum=lines.reduce((a,l)=>a+(l.p||0),0)-(disc||0)+(tax||0),total=num(f.total)!=null?num(f.total):(lines.some(l=>l.p!=null)?Math.round(sum*100)/100:null);
+  const rec={store,iso:isoOk(f.iso)||today(),lines,photoCount:f.files.length,occ:oid,ts:Date.now()};if(total!=null)rec.total=total;if(tax)rec.tax=tax;if(disc)rec.discount=disc;if(ord)rec.orderNo=ord;if(ret)rec.returnBy=ret;
   node("receipts")[rid]=rec;write("gifts/receipts/"+rid,rec,"set");todo.forEach(fn=>fn());
   log("🧾 Receipt: "+(store||"a store")+(total!=null?" "+money(total):"")+(made?" · "+made+" new present"+(made===1?"":"s"):"")+(bought?" · "+bought+" idea"+(bought===1?"":"s")+" bought":""));
   gfView="receipts";gfRcOpen=rid;return true;
@@ -806,7 +893,7 @@ function rcptView(o){
       '<span class="gf-amt">'+(r.total!=null?money(r.total):'—')+'</span></button>';
     if(on){h+='<div class="gf-bd">'+rcptPhotos(r)+(r.lines||[]).map(l=>{const it=l&&l.item&&I[l.item];if(!l)return "";
         const where=it?(pidsOf(it).length?names(pidsOf(it)):"🗄 no one yet")+(((o.secs||{})[it.sec]||{}).name?" · "+((o.secs||{})[it.sec].emoji||"")+" "+o.secs[it.sec].name:""):(l.item?"present deleted":"✕ not a gift");
-        return '<div class="gf-rcline">'+(it?'<button class="gf-ib" onclick="gfEditItem(\''+esc(l.item)+'\')"><b>'+esc(l.t)+'</b>':'<span style="flex:1;color:#94a3b8">'+esc(l.t))+'<span class="gf-pc">'+esc(where)+'</span>'+(it?'</button>':'</span>')+'<span class="gf-amt">'+(l.p!=null?money(l.p):'')+(l.tax?'<small> + '+money(l.tax)+' tax</small>':'')+'</span></div>';}).join("")+'</div>';}
+        return '<div class="gf-rcline">'+(it?'<button class="gf-ib" onclick="gfEditItem(\''+esc(l.item)+'\')"><b>'+esc(l.t)+'</b>':'<span style="flex:1;color:#94a3b8">'+esc(l.t))+'<span class="gf-pc">'+esc(where)+'</span>'+(it?'</button>':'</span>')+'<span class="gf-amt">'+(l.p!=null&&(l.disc||l.tax)?money(Math.round((l.p-(l.disc||0)+(l.tax||0))*100)/100)+'<small> ('+money(l.p)+(l.disc?' − '+money(l.disc)+' off':'')+(l.tax?' + '+money(l.tax)+' tax':'')+')</small>':(l.p!=null?money(l.p):''))+'</span></div>';}).join("")+'</div>';}
     h+='</div>';});
   return h;
 }
@@ -824,11 +911,12 @@ const RC_CSS=`
 .gf-rcrow .gf-tick.on span:last-child{color:#0f172a;text-decoration:none}
 .gf-rcbig{display:flex;flex-direction:column;gap:8px;margin:4px 0 8px}
 .gf-rcbig img{width:100%;border-radius:8px;border:1px solid #e2e8f0}
+.gf-rcnet{font-weight:900;color:#0f172a;font-size:12.5px}
 .gf-rcline{display:flex;align-items:center;gap:8px;border-top:1px solid #f1f5f9;padding:7px 0;font-size:13px}
 .gf-rcline .gf-pc{display:block;font-weight:500;font-size:11.5px;color:#64748b}
 `;
 Object.assign(window,{gfRcTaxed,gfRcRedraw,gfRcptNew,gfRcptPick,gfRcptDrop,gfRcptRead,gfRcSet,gfRcPid,gfRcNone,gfRcNog,gfRcSec,gfRcUseIdea,gfRcIdea,gfRcAdd,gfRcDel,gfRcStatus,gfRcptToggle,gfRcptPdf});
-const RC_TEST={taxShares:rcTaxShares,split:rcSplit,load:rcptLoad,prompt:RC_PROMPT,firstJson,matchIdea,ideas,rcpts,photos:gfPhotos,open:()=>gfRcOpen,addFile:(url,pdf)=>{const f=rcF();if(f)f.files.push({url,pdf:!!pdf});}};
+const RC_TEST={discShares:rcDiscShares,taxShares:rcTaxShares,split:rcSplit,load:rcptLoad,prompt:RC_PROMPT,firstJson,matchIdea,ideas,rcpts,photos:gfPhotos,open:()=>gfRcOpen,addFile:(url,pdf)=>{const f=rcF();if(f)f.files.push({url,pdf:!!pdf});}};
 // GIFTS_RCPT_END
 
 // GIFTS_OCC_START — any occasion + history + birthdays, slice 6 (her ask 2026-11-20: "being able to pick other things besides
@@ -887,7 +975,7 @@ function occForPicker(f){
 function gfOccFor(pid){if(!gfEdit||gfEdit.kind!=="occ")return;const f=gfEdit.form;f.for=f.for===pid?null:pid;occAuto(f);gfDraw();}
 function occStar(o){return o&&o.kind==="birthday"&&o.for&&people().some(p=>p.id===o.for)?o.for:null;}
 function starCard(o,pid){
-  const p=person(pid),T=personTot(o.id,pid),S=secsOf(o),ord=s=>{const i=S.findIndex(x=>x.id===s);return i<0?99:i;};
+  const p=person(pid),T=personTot(o.id,pid),S=secsFor(o,[pid]),ord=s=>{const i=S.findIndex(x=>x.id===s);return i<0?99:i;};
   const mine=items(o.id).filter(it=>pidsOf(it).indexOf(pid)>=0).sort((a,b)=>ord(a.sec)-ord(b.sec)||(a.ts||0)-(b.ts||0));
   const nb=nextBday(p.birthday,o.date||today());
   let h='<div class="gf-card"><div class="gf-hd" style="background:'+esc(p.color||"#475569")+'"><span>🎂 '+esc(p.name)+(nb&&nb.age!=null&&nb.iso===o.date?' · turns '+nb.age:'')+'</span>'+
@@ -928,6 +1016,191 @@ Object.assign(window,{gfBdayStart,gfOccFor,gfOthers});
 const OCC_TEST={nextBday,nudges,pastGifts,occStar,bdayName,pastLabel,othersOpen:()=>gfOthersOpen};
 // GIFTS_OCC_END
 
+// GIFTS_REMIND_START — ⏰ Reminders, slice 5 (plan §3.6 "Reminders (inside Mom's Day only)" + §4 slice 5: "⏰ return windows (and
+// early buys whose window ends before the 25th) · 📦 late orders · 🚚 order-by date · 🎀 left to wrap · 🔎 Jan 2 'never marked given'
+// — on the Budget tab and in 🔴 NOW on Home Base"). Computed from the presents + receipts every time, never stored. Each reminder is
+// {kind, text, n, view, occ}; a tap opens that view on that occasion.
+//   🌙 eve     Christmas Eve from 5 PM: time to gather → 🌙 Eve
+//   ⏰ return  a present's return window (its own returnBy, else its receipt's) closes within 7 days; a receipt with no present on it
+//              counts on its own · given / returned / dropped presents never nag → 🧾 Receipts
+//   📦 late    ordered presents past their 📦 coming-by date ("3 orders should have come by now") → 📦 Coming
+//   🚚 orderby from 7 days before the occasion's order-by date: "Order the last presents by Tue Dec 15 — N ideas not bought yet" → 🛍 Shop.
+//              The date is hers: gifts/occasions/<oid>.orderBy, set on ✏️ (Christmas with none = Dec 15; USPS Ground's 2025 cut-off
+//              was Dec 17, so Dec 15 leaves two days' room)
+//   🎀 wrap    the 7 days before an occasion: presents here and not wrapped → 🎀 To wrap
+//   ⏰ early   bought early: a return window that ends BEFORE the occasion (plan §3.6 "anything bought before November gets a nudge if
+//              its normal return window ends before the 25th") — once it's 7 days off it moves to the ⏰ return line → 🧾 Receipts
+//   🔎 hidden  Jan 2–10 after a Christmas: presents bought but never marked given — "still hidden?" (55% of parents find one later) → 📍 Where
+// The SAME lines show at the top of Gifts and in 🔴 NOW on Mom's Day ▸ 🏡 Home Base: index.html never reads gifts/ itself (plan §3.7) —
+// it asks window.giftNowLines(), which answers [] for anyone but Mom and on Dad's TV (?kiosk=dad), starts the gifts/ listener only for
+// Mom, answers [] until gifts/ is in, then asks Home Base to repaint ONCE (giftNowRepaint, index.html's GIFTS block).
+// SECRET: a line says "presents", never a present's name or who it's for — Home Base can be seen by a kid walking by. Names stay
+// inside Gifts. Her rule 2026-11-20 ("reword the santa section in case a kid sees it … so the reminders don't pop up saying it"):
+// no reminder ever names a section either (no "Santa") — only counts and neutral words (presents, orders, ideas, to wrap).
+// Data: only gifts/occasions/<oid>.orderBy, inside the occasion sheet's ONE update.
+const REM_DAYS=7, REM_EVE_HOUR=17, REM_ORDER_BY="12-15";
+const REM_KINDS=["eve","return","late","orderby","wrap","early","hidden"];   // most urgent first
+const REM_WD=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"], REM_MO=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+let gfNowWant=false;   // Home Base asked for its lines → repaint it once when gifts/ first arrives
+function isIso(v){return /^\d{4}-\d{2}-\d{2}$/.test(String(v||""));}
+function dayDiff(a,b){return Math.round((new Date(String(b)+"T12:00:00")-new Date(String(a)+"T12:00:00"))/864e5);}
+function addDays(iso,n){const d=new Date(String(iso)+"T12:00:00");d.setDate(d.getDate()+n);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
+function remDate(iso){const d=new Date(String(iso)+"T12:00:00");return isNaN(d)?String(iso):REM_WD[d.getDay()]+" "+REM_MO[d.getMonth()]+" "+d.getDate();}
+function remWhen(t,iso){const d=dayDiff(t,iso);return d===0?"today":d===1?"tomorrow":remDate(iso);}
+function plural(n,w){return n+" "+w+(n===1?"":"s");}
+function occWord(o){return o.kind==="christmas"?"Christmas":o.kind==="birthday"?"the birthday":o.kind==="easter"?"Easter":"the day";}   // never the occasion's own name on Home Base
+function orderByOf(o){if(!o)return "";if(isIso(o.orderBy))return o.orderBy;return o.kind==="christmas"&&isIso(o.date)?o.date.slice(0,4)+"-"+REM_ORDER_BY:"";}
+function retBy(it){if(isIso(it.returnBy))return it.returnBy;const r=it.rcpt&&(gfData.receipts||{})[it.rcpt];return r&&isIso(r.returnBy)?r.returnBy:"";}
+function bareRcpts(oid){   // receipts for this occasion that no present came from (she typed just the total) — their window still matters
+  const R=gfData.receipts||{},I=gfData.items||{};
+  return Object.keys(R).map(id=>Object.assign({id},R[id])).filter(r=>r.occ===oid&&isIso(r.returnBy)&&!(r.lines||[]).some(l=>l&&l.item&&I[l.item])&&!Object.keys(I).some(k=>I[k].rcpt===r.id));
+}
+function giftReminders(t,hour){
+  t=isIso(t)?t:today();if(hour==null)hour=new Date().getHours();
+  const out=[],byOcc={},md=t.slice(5);
+  items().forEach(it=>{(byOcc[it.occ]=byOcc[it.occ]||[]).push(it);});
+  const add=(kind,o,n,view,text)=>{out.push({kind,text,n,view,occ:o.id,occName:o.name||"",date:o.date||""});};
+  occs().forEach(o=>{
+    const L=(byOcc[o.id]||[]).filter(live),open=!o.closed,dd=isIso(o.date)?dayDiff(t,o.date):null,word=occWord(o);
+    const unGiven=L.filter(it=>(it.status||"idea")!=="given"),inHouse=L.filter(it=>it.status==="here"||it.status==="wrapped");
+    // 🌙 Christmas Eve, from 5 PM
+    if(open&&o.kind==="christmas"&&dd===1&&hour>=REM_EVE_HOUR&&L.length)add("eve",o,inHouse.length,"eve","🌙 Time to gather"+(inHouse.length?" — "+plural(inHouse.length,"present")+" to set out":"")+" · open 🌙 Eve");
+    // ⏰ a return window closes within 7 days
+    const soon=unGiven.filter(it=>it.status!=="idea"&&retBy(it)&&dayDiff(t,retBy(it))>=0&&dayDiff(t,retBy(it))<=REM_DAYS);
+    const bare=bareRcpts(o.id).filter(r=>dayDiff(t,r.returnBy)>=0&&dayDiff(t,r.returnBy)<=REM_DAYS);
+    if(soon.length||bare.length){
+      const n=soon.length+bare.length,first=soon.map(retBy).concat(bare.map(r=>r.returnBy)).sort()[0];
+      const what=[soon.length?plural(soon.length,"present"):"",bare.length?plural(bare.length,"receipt"):""].filter(Boolean).join(" and ");
+      add("return",o,n,"receipts",n===1?"⏰ The return window for "+what+" closes "+remWhen(t,first):"⏰ Return windows close this week for "+what+" — the first "+remWhen(t,first));
+    }
+    // 📦 ordered and should be here by now
+    const late=L.filter(it=>it.status==="ordered"&&isIso(it.due)&&it.due<t);
+    if(late.length)add("late",o,late.length,"coming","📦 "+plural(late.length,"order")+" should have come by now");
+    // 🚚 her order-by date, from 7 days before it
+    const ob=orderByOf(o),dob=ob?dayDiff(t,ob):null,ideasLeft=L.filter(it=>(it.status||"idea")==="idea");
+    if(open&&ob&&dob>=0&&dob<=REM_DAYS&&(dd==null||dd>=0)&&ideasLeft.length)
+      add("orderby",o,ideasLeft.length,"shop","🚚 Order the last presents by "+remWhen(t,ob)+" — "+plural(ideasLeft.length,"idea")+" not bought yet");
+    // 🎀 the week of: still to wrap
+    const toWrap=L.filter(it=>it.status==="here");
+    if(open&&dd!=null&&dd>=0&&dd<=REM_DAYS&&toWrap.length)
+      add("wrap",o,toWrap.length,"wrap","🎀 "+plural(toWrap.length,"present")+" still to wrap — "+word+(dd===0?" is today":dd===1?" is tomorrow":" in "+dd+" days"));
+    // ⏰ bought early: the window ends before the day (and isn't this week's ⏰ line yet)
+    const early=open&&dd!=null&&dd>0?unGiven.filter(it=>{const r=retBy(it);return it.status!=="idea"&&r&&r<o.date&&dayDiff(t,r)>REM_DAYS;}):[];
+    if(early.length){const first=early.map(retBy).sort()[0];
+      add("early",o,early.length,"receipts",early.length===1?"⏰ 1 present's return window ends "+remDate(first)+" — before "+word:"⏰ "+early.length+" presents' return windows end before "+word+" — the first "+remDate(first));}
+    // 🔎 Jan 2–10 after Christmas: bought, never marked given
+    if(o.kind==="christmas"&&isIso(o.date)&&o.date<t&&md>="01-02"&&md<="01-10"&&+t.slice(0,4)===+o.date.slice(0,4)+1&&inHouse.length)
+      add("hidden",o,inHouse.length,"where","🔎 "+plural(inHouse.length,"present")+" never got marked given — still hidden?");
+  });
+  return out.sort((a,b)=>REM_KINDS.indexOf(a.kind)-REM_KINDS.indexOf(b.kind)||String(a.date).localeCompare(String(b.date)));
+}
+function giftNowLines(){   // 🔴 NOW on Home Base — Mom only, never Dad's TV; [] until gifts/ is in
+  try{if(typeof momHere!=="function"||!momHere())return [];if(typeof _kioskD==="function"&&_kioskD())return [];}catch(e){return [];}
+  gfNowWant=true;gfListen();if(!gfLoaded)return [];
+  return giftReminders(today()).map(r=>({kind:r.kind,text:r.text,n:r.n,view:r.view,occ:r.occ}));   // no occasion name, no present names
+}
+function nowRepaint(){if(!gfNowWant)return;try{if(typeof giftNowRepaint==="function")giftNowRepaint();}catch(e){}}
+function gfRemGo(view,oid,quiet){   // a reminder tapped (here, or on Home Base with quiet = index.html opens Gifts itself)
+  if(oid&&occ(oid)){gfOcc=oid;try{HA_LS.setItem("ha_gf_occ",oid);}catch(e){}}
+  gfView=GF_VIEWS.some(v=>v[0]===view)?view:"people";gfSelOn=false;gfSel={};gfEdit=null;
+  if(!quiet){gfDraw();try{window.scrollTo(0,0);}catch(e){}}
+}
+function remCard(){   // top of the Gifts page, above the occasions + views
+  if(!gfLoaded)return "";const R=giftReminders(today());if(!R.length)return "";
+  if(typeof document!=="undefined"&&document.getElementById&&!document.getElementById("gf-rem-style")){try{const s=document.createElement("style");s.id="gf-rem-style";s.textContent=REM_CSS;document.head.appendChild(s);}catch(e){}}
+  const many=occs().filter(o=>!o.closed).length>1,cur=curOcc();
+  return '<div class="gf-card gf-rem"><div class="gf-bd">'+R.map(r=>'<button class="gf-remrow'+(r.view===gfView&&r.occ===cur?" on":"")+'" onclick="gfRemGo(\''+esc(r.view)+'\',\''+esc(r.occ)+'\')"><span class="gf-pn">'+esc(r.text)+
+    (many||r.occ!==cur?'<span class="gf-pc">'+esc(r.occName)+'</span>':'')+'</span><span class="gf-remgo">›</span></button>').join("")+'</div></div>';
+}
+function remOrderField(f){   // ✏️ occasion (gfEdit.id — the form itself has no id): her own order-by date (Christmas with none = Dec 15)
+  if(!gfEdit||!gfEdit.id)return "";const def=f.kind==="christmas"&&isIso(f.date)?f.date.slice(0,4)+"-"+REM_ORDER_BY:"";
+  return field("orderBy","🚚 Order the last presents by"+(def?" (empty = "+shortDate(def)+")":""),"","date");
+}
+const REM_CSS=`
+.gf-rem{border:2px solid #fcd34d;box-shadow:none}
+.gf-rem .gf-bd{padding:4px 12px}
+.gf-remrow{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:none;border:none;border-top:1px solid #fef3c7;padding:8px 0;cursor:pointer;font:inherit;color:inherit}
+.gf-remrow:first-child{border-top:none}
+.gf-remrow .gf-pn{font-size:13px;font-weight:700}
+.gf-remrow.on .gf-pn{color:#92400e}
+.gf-remgo{font-size:18px;font-weight:800;color:#b45309}
+`;
+Object.assign(window,{gfRemGo,giftNowLines,giftReminders});
+window._gfRemTest={giftReminders,orderByOf,retBy,remDate,nowWant:()=>gfNowWant,setNowWant:v=>{gfNowWant=!!v;},setLoaded:v=>{gfLoaded=!!v;},on:()=>gfOn,setOn:v=>{gfOn=!!v;}};
+// GIFTS_REMIND_END
+
+// GIFTS_GROUPS_START — group buttons + each group's own sections (her ask 2026-11-20: "I do like having the four kids there easy
+// because they're the ones I'm going to be buying for the most. But then maybe a button beside it that has the other group … if you
+// click that button, it then shows that group and makes like the kids disappear unless you click back to the kids button, but the
+// kids should be open … And then those wouldn't have the categories that the kids have … connect those with whatever groups that
+// particular group has made" — and her "yes" to this design the same day).
+//   · 👨‍👩‍👧 People: a row of buttons — 👧 Kids · each group that has people · ＋ Group. Gifts always OPENS on Kids (a fresh visit;
+//     a redraw while she's on the page keeps her pick). A group's button shows only that group (its people, its total + budget bar);
+//     the occasion card on top keeps the whole occasion's total (everyone).
+//   · A group other than Kids has its OWN sections, kept across occasions: gifts/groups/<gid>/secs/<sid> {name, emoji, order}.
+//     None saved = one section 🎁 Gifts (id "gifts", nothing written until she edits). ✏️ Sections in that group's view adds and
+//     renames — ONE update per section that changed (when a group has none saved yet, 🎁 Gifts is saved with her first change, so
+//     presents already in it stay in it). The kids keep the occasion's sections (gifts/occasions/<oid>/secs).
+//   · Section choices follow the person (the first one picked): a kid → the occasion's sections, anyone else → their group's — in
+//     the present sheet, ↪ Move, the person page, their 💲 budget sheet and the receipt check screen's per-line chips. A present
+//     whose section isn't in its person's list shows under 📦 No section (as before).
+const GRP_GIFTS={id:"gifts",emoji:"🎁",name:"Gifts",order:0};
+let gfGrp="kids";   // the group button she picked (People view)
+function grpSecs(gid){
+  const s=(((gfData.groups||{})[gid])||{}).secs||{};
+  const L=Object.keys(s).filter(id=>s[id]&&typeof s[id]==="object").map(id=>Object.assign({id},s[id])).sort((a,b)=>(a.order||0)-(b.order||0));
+  return L.length?L:[Object.assign({virtual:true},GRP_GIFTS)];
+}
+function grpOfPids(pids){const p=(pids||[]).length?person(pids[0]):null;return p?(p.group||"other"):"kids";}   // no one yet → the occasion's
+function secsFor(o,pids){const g=grpOfPids(pids);return g==="kids"?secsOf(o):grpSecs(g);}
+function grpSecFix(f){const S=secsFor(occ(f.occ),f.pids);if(!S.some(s=>s.id===f.sec))f.sec=(S[0]&&S[0].id)||"";}   // a new person → their group's first section
+function rcSecs(o,r){const S=secsFor(o,r.pids);if(!S.some(s=>s.id===r.sec))r.sec=(S[0]&&S[0].id)||"";return S;}   // a receipt line's chips follow its person
+function grpTabs(){const P=people();return groups().filter(g=>g.id!=="kids"&&P.some(p=>(p.group||"other")===g.id));}
+function curGrp(){return gfGrp!=="kids"&&grpTabs().some(g=>g.id===gfGrp)?gfGrp:"kids";}
+function grpOpen(el){let here=false;try{here=!!(el&&el.querySelector&&el.querySelector("#gf-page"));}catch(e){}if(!here)gfGrp="kids";}
+function grpBar(){
+  const cur=curGrp(),K=groups().find(g=>g.id==="kids")||{emoji:"👧",name:"Kids"};
+  const b=(id,g)=>'<button class="gf-grp'+(cur===id?" on":"")+'" onclick="gfGroup(\''+esc(id)+'\')">'+esc((g.emoji?g.emoji+" ":"")+g.name)+'</button>';
+  return '<div class="gf-grps">'+b("kids",K)+grpTabs().map(g=>b(g.id,g)).join("")+'<button class="gf-grp add" onclick="gfNewGroup()">＋ Group</button></div>';
+}
+function grpSecLine(g){
+  if(g.id==="kids")return "";
+  return '<div class="gf-grpsec"><span>'+grpSecs(g.id).map(s=>esc((s.emoji||"")+" "+s.name)).join(" · ")+'</span><button class="gf-tool gf-mini" onclick="gfGrpSecs(\''+esc(g.id)+'\')">✏️ Sections</button></div>';
+}
+function gfGroup(gid){gfGrp=gid||"kids";gfDraw();}
+function gfGrpSecs(gid){gfEdit={kind:"gsecs",id:gid,form:{gid,secs:grpSecs(gid).map(s=>({id:s.id,emoji:s.emoji||"",name:s.name||"",virtual:!!s.virtual}))}};gfDraw();}
+function grpSecsSheet(){
+  const f=gfEdit.form,g=groups().find(x=>x.id===f.gid)||{};
+  return '<div class="gf-form"><div class="gf-sub wide" style="margin:0">'+esc((g.emoji?g.emoji+" ":"")+(g.name||""))+' — these sections are for everyone in this group, every occasion. The kids keep the occasion\'s own sections.</div>'+
+    '<div class="gf-f wide"><span>Sections</span>'+f.secs.map((s,i)=>'<div style="display:flex;gap:6px;margin-top:4px"><input style="width:56px" value="'+esc(s.emoji)+'" oninput="gfSecEdit('+i+',\'emoji\',this.value)"><input value="'+esc(s.name)+'" placeholder="e.g. Stocking" oninput="gfSecEdit('+i+',\'name\',this.value)"></div>').join("")+
+    '<button class="gf-tool" style="margin-top:6px;align-self:flex-start" onclick="gfSecAdd()">＋ Section</button></div></div>';
+}
+function grpSecsSave(f){   // ONE update per section that changed, under gifts/groups/<gid>/secs/<sid>
+  const gid=f.gid,G=node("groups"),g=G[gid]=Object.assign({},G[gid]||{}),secs=g.secs=Object.assign({},g.secs||{});
+  const rows=f.secs.map(s=>({s,nm:String(s.name||"").trim().slice(0,40),em:String(s.emoji||"").trim()||"🎁"})).filter(x=>x.nm);
+  const same=(x,old)=>old&&old.name===x.nm&&old.emoji===x.em;
+  const any=rows.some(x=>!x.s.id||!same(x,x.s.virtual?GRP_GIFTS:secs[x.s.id]));   // anything new or renamed?
+  let next=Math.max(Object.keys(secs).reduce((m,k)=>Math.max(m,+(secs[k].order)||0),-1)+1,rows.some(x=>x.s.virtual)?1:0),n=0;   // 🎁 Gifts keeps 0
+  rows.forEach(x=>{
+    if(!any)return;const old=x.s.virtual?null:secs[x.s.id];if(old&&same(x,old))return;
+    const sid=x.s.id||newId2(secs,slug(x.nm)),rec={name:x.nm,emoji:x.em,order:old?(+old.order||0):x.s.virtual?0:next++};
+    secs[sid]=Object.assign({},old||{},rec);write("gifts/groups/"+gid+"/secs/"+sid,rec,"update");n++;
+  });
+  if(!Object.keys(secs).length)delete g.secs;
+  if(n)log("Sections for "+((groups().find(x=>x.id===gid)||{}).name||gid)+": "+grpSecs(gid).map(s=>s.name).join(", "));
+}
+const GRP_CSS=`
+.gf-grps{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+.gf-grp{padding:8px 14px;border-radius:12px;border:1.5px solid var(--border);background:#fff;font-weight:800;font-size:13px;cursor:pointer;font-family:inherit;color:#334155}
+.gf-grp.on{background:#0f172a;color:#fff;border-color:#0f172a}
+.gf-grp.add{border-style:dashed;color:#64748b;font-size:12px}
+.gf-grpsec{display:flex;align-items:center;gap:8px;padding:2px 14px 0;font-size:11.5px;color:#64748b;font-weight:600}
+.gf-grpsec span{flex:1;min-width:0}
+`;
+Object.assign(window,{gfGroup,gfGrpSecs});
+const GRP_TEST={secsFor,grpSecs,grpTabs,cur:()=>curGrp(),set:g=>{gfGrp=g;},open:grpOpen};
+// GIFTS_GROUPS_END
+
 function gfDraw(){
   if(!gfRoot)return;
   let body;
@@ -935,6 +1208,7 @@ function gfDraw(){
   else{const oid=curOcc(),o=oid&&occ(oid);
     const V={even:evenView,wrap:wrapView,where:whereView,coming:comingView,shop:shopView,closet:closetView,eve:eveView,receipts:rcptView};
     body=(!o||gfView==="people"?bdayNudges():"")+   // GIFTS_OCC: 🎂 at the top of Gifts
+      remCard()+   // GIFTS_REMIND: ⏰ reminders above the occasions + views
       (o?occBar()+viewNav()+(gfView==="person"&&gfPid?personView(o,gfPid):V[gfView]?V[gfView](o):peopleView(o)):emptyView());}
   // SHEETSCROLL (her report 2026-11-20, adding a receipt: "every time I click something, it jumps it back up to the top"): every tap
   // redraws the page AND the open pop-up, and a fresh pop-up starts scrolled to the top. Keep the pop-up's place when the SAME pop-up
@@ -959,7 +1233,8 @@ function gfDraw(){
 function gfListen(){
   if(gfOn)return;gfOn=true;
   if(typeof db==="undefined"||!db){gfLoaded=true;return;}
-  db.ref("gifts").on("value",s=>{gfData=s.val()||{};gfLoaded=true;try{if(typeof tab!=="undefined"&&tab==="moms-plan"&&typeof mpSubView!=="undefined"&&mpSubView==="gifts"&&!gfEdit)gfDraw();}catch(e){}});
+  db.ref("gifts").on("value",s=>{const first=!gfLoaded;gfData=s.val()||{};gfLoaded=true;try{if(typeof tab!=="undefined"&&tab==="moms-plan"&&typeof mpSubView!=="undefined"&&mpSubView==="gifts"&&!gfEdit)gfDraw();}catch(e){}
+    if(first)nowRepaint();});   // GIFTS_REMIND: Home Base asked before gifts/ was in → its 🔴 NOW lines, once
 }
 const GF_CSS=`
 .gf-wrap{padding:10px 12px 40px;max-width:760px;margin:0 auto;font-family:'DM Sans',sans-serif}
@@ -1035,10 +1310,11 @@ const GF_CSS=`
 `;
 window.renderGifts=function(el,ah){
   if(typeof momHere==="function"&&!momHere()){el.innerHTML=(ah||"")+'<div class="gf-empty" style="padding:40px">🔒 Mom only.</div>';return;}   // the presents are a secret: no data loads without Mom
-  if(!document.getElementById("gf-style")){const s=document.createElement("style");s.id="gf-style";s.textContent=GF_CSS+RC_CSS+OCC_CSS;document.head.appendChild(s);}
+  if(!document.getElementById("gf-style")){const s=document.createElement("style");s.id="gf-style";s.textContent=GF_CSS+RC_CSS+OCC_CSS+GRP_CSS;document.head.appendChild(s);}
+  grpOpen(el);   // GIFTS_GROUPS: a fresh visit opens on 👧 Kids
   gfRoot=el;gfAh=ah||"";gfListen();gfDraw();
 };
-Object.assign(window,{gfGo,gfSelToggle,gfPick,gfBulk,gfBulkIds,gfGather,gfEveTick,gfLineAdd,gfLineTick,gfLineDel,gfLinesCopy,gfEvenEdit,gfNeed,gfStartOcc,gfPickOcc,gfOpenPerson,gfBack,gfNewItem,gfEditItem,gfMove,gfSet,gfSetDraw,gfTogglePid,gfSecBudget,gfSecEdit,gfSecAdd,gfCancel,gfSave,gfDelete,gfNext,gfNewPerson,gfEditPerson,gfBudget,gfGroupBudget,gfNewGroup,gfNewOcc,gfOccEdit});
-window._gfTest={evenData,behind,evenSet,sel:()=>gfSel,selOn:()=>gfSelOn,data:()=>gfData,setData:d=>{gfData=d||{};gfLoaded=true;},people,groups,occs,secsOf,items,personTot,groupTot,occTot,left,share,curOcc,
-  setOcc:o=>{gfOcc=o;},view:()=>gfView,edit:()=>gfEdit,draw:gfDraw,setRoot:(el,ah)=>{gfRoot=el;gfAh=ah||"";},reset:()=>{gfOcc=null;gfView="people";gfPid=null;gfEdit=null;gfRcOpen=null;gfOthersOpen=null;},rc:RC_TEST,oc:OCC_TEST};
+Object.assign(window,{gfSendTo,gfBringIn,gfShareSet,gfShareSize,gfGo,gfSelToggle,gfPick,gfBulk,gfBulkIds,gfGather,gfEveTick,gfLineAdd,gfLineTick,gfLineDel,gfLinesCopy,gfEvenEdit,gfNeed,gfStartOcc,gfPickOcc,gfOpenPerson,gfBack,gfNewItem,gfEditItem,gfMove,gfSet,gfSetDraw,gfTogglePid,gfSecBudget,gfSecEdit,gfSecAdd,gfCancel,gfSave,gfDelete,gfNext,gfNewPerson,gfEditPerson,gfBudget,gfGroupBudget,gfNewGroup,gfNewOcc,gfOccEdit});
+window._gfTest={held,evenData,behind,evenSet,sel:()=>gfSel,selOn:()=>gfSelOn,data:()=>gfData,setData:d=>{gfData=d||{};gfLoaded=true;},people,groups,occs,secsOf,items,personTot,groupTot,occTot,left,share,curOcc,
+  setOcc:o=>{gfOcc=o;},view:()=>gfView,edit:()=>gfEdit,draw:gfDraw,setRoot:(el,ah)=>{gfRoot=el;gfAh=ah||"";},reset:()=>{gfGrp="kids";gfOcc=null;gfView="people";gfPid=null;gfEdit=null;gfRcOpen=null;gfOthersOpen=null;},rc:RC_TEST,oc:OCC_TEST,gr:GRP_TEST};
 })();
